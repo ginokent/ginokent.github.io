@@ -1,0 +1,63 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('posts', ({ data }) => !data.draft);
+  
+  const tags = [...new Set(posts.flatMap((post) => post.data.tags))];
+  
+  return tags.map((tag) => ({
+    params: { tag },
+    props: {
+      tag,
+      posts: posts
+        .filter((post) => post.data.tags.includes(tag))
+        .sort((a, b) => b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf()),
+    },
+  }));
+}
+
+interface Props {
+  tag: string;
+  posts: Awaited<ReturnType<typeof getCollection<'posts'>>>;
+}
+
+const { tag, posts } = Astro.props;
+
+function formatDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+---
+
+<BaseLayout title={`${tag} の記事`} description={`${tag} タグの記事一覧`}>
+  <div class="page-header">
+    <h1 class="page-title">{tag}</h1>
+    <p class="page-description">{posts.length} 件の記事</p>
+  </div>
+  
+  <ul class="post-list">
+    {posts.map((post) => (
+      <li class="post-item">
+        <time class="post-date" datetime={post.data.publishedAt.toISOString()}>
+          {formatDate(post.data.publishedAt)}
+        </time>
+        <a href={`/posts/${post.slug}`} class="post-title-link">
+          {post.data.title}
+        </a>
+        <div class="post-tags">
+          {post.data.tags.map((t) => (
+            <a href={`/tags/${t}`} class="tag" data-current={t === tag}>{t}</a>
+          ))}
+        </div>
+      </li>
+    ))}
+  </ul>
+</BaseLayout>
+
+<style>
+  .tag[data-current='true'] {
+    background: var(--accent);
+    color: white;
+  }
+</style>
