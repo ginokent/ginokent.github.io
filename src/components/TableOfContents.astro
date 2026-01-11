@@ -1,0 +1,29 @@
+---
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  headings: Heading[];
+}
+
+const { headings } = Astro.props;
+
+// Filter to h2, h3, h4 only
+const toc = headings.filter((h) => h.depth >= 2 && h.depth <= 4);
+---
+
+{toc.length > 0 && (
+  <nav class="toc">
+    <div class="toc-title">目次</div>
+    <ul class="toc-list">
+      {toc.map((heading) => (
+        <li class={`depth-${heading.depth}`}>
+          <a href={`#${heading.slug}`}>{heading.text}</a>
+        </li>
+      ))}
+    </ul>
+  </nav>
+)}

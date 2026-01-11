@@ -1,0 +1,84 @@
+---
+---
+
+<header class="header">
+  <div class="container header-inner">
+    <a href="/" class="site-title">ginokent Blog</a>
+    <div class="header-actions">
+      <a href="/about" class="header-link">About</a>
+      <a href="/feed.xml" class="header-link" aria-label="RSS Feed">RSS</a>
+      <button class="theme-toggle" id="theme-toggle" aria-label="テーマ切り替え">
+        <span class="theme-icon-light">☀️</span>
+        <span class="theme-icon-dark">🌙</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<style>
+  .header-link {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .header-link:hover {
+    color: var(--text);
+  }
+
+  .theme-icon-light,
+  .theme-icon-dark {
+    display: none;
+  }
+
+  /* Light mode: show moon (to switch to dark) */
+  :global(:root:not([data-theme])) .theme-icon-dark,
+  :global([data-theme='light']) .theme-icon-dark {
+    display: inline;
+  }
+
+  /* Dark mode: show sun (to switch to light) */
+  :global([data-theme='dark']) .theme-icon-light {
+    display: inline;
+  }
+
+  /* System dark preference when no theme set */
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme])) .theme-icon-dark {
+      display: none;
+    }
+    :global(:root:not([data-theme])) .theme-icon-light {
+      display: inline;
+    }
+  }
+</style>
+
+<script>
+  function initThemeToggle() {
+    const toggle = document.getElementById('theme-toggle');
+    if (!toggle) return;
+
+    toggle.addEventListener('click', () => {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+      let next: string;
+      if (current === 'dark') {
+        next = 'light';
+      } else if (current === 'light') {
+        next = 'dark';
+      } else {
+        // No explicit theme set, toggle based on system preference
+        next = prefersDark ? 'light' : 'dark';
+      }
+
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+    });
+  }
+
+  initThemeToggle();
+  document.addEventListener('astro:after-swap', initThemeToggle);
+</script>
