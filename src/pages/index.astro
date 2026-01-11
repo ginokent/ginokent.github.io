@@ -1,0 +1,32 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const posts = (await getCollection('posts', ({ data }) => !data.draft))
+  .sort((a, b) => b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf());
+
+function formatDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+---
+
+<BaseLayout title="ginokent Blog">
+  <ul class="post-list">
+    {posts.map((post) => (
+      <li class="post-item">
+        <time class="post-date" datetime={post.data.publishedAt.toISOString()}>
+          {formatDate(post.data.publishedAt)}
+        </time>
+        <a href={`/posts/${post.slug}`} class="post-title-link">
+          {post.data.title}
+        </a>
+      </li>
+    ))}
+  </ul>
+
+  {posts.length === 0 && (
+    <p style="color: var(--text-secondary); text-align: center; padding: 3rem 0;">
+      記事がまだありません
+    </p>
+  )}
+</BaseLayout>
