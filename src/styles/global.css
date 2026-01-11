@@ -140,6 +140,7 @@ a:hover {
 /* Main */
 main.container {
   flex: 1;
+  width: 100%;
 }
 
 div.about {
@@ -252,6 +253,8 @@ div.about {
 .article-content {
   font-size: 0.9375rem;
   line-height: 1.8;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .article-content h2 {
@@ -311,11 +314,15 @@ div.about {
   border-radius: 6px;
   font-size: 0.8125rem;
   line-height: 1.5;
+  max-width: 100%;
+  width: 100%;
 }
 
 .article-content pre code {
   background: none;
   padding: 0;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 /* Shiki dual theme support (defaultColor: false) */
@@ -365,6 +372,8 @@ pre.astro-code span {
   margin: 1.5rem 0;
   border-collapse: collapse;
   font-size: 0.875rem;
+  display: block;
+  overflow-x: auto;
 }
 
 .article-content th,
