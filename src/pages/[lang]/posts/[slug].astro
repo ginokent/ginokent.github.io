@@ -1,0 +1,83 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import TableOfContents from '../../../components/TableOfContents.astro';
+import { locales, type Locale, translations, formatDate, localePath, getLocaleFromSlug } from '../../../lib/i18n';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('posts');
+  const paths = [];
+
+  for (const locale of locales) {
+    // 日本語: slug が en/ で始まらない
+    // 英語: slug が en/ で始まる
+    const localePosts = posts.filter((post) => {
+      if (locale === 'ja') return !post.slug.startsWith('en/');
+      return post.slug.startsWith('en/');
+    });
+
+    for (const post of localePosts) {
+      const { slugWithoutLocale } = getLocaleFromSlug(post.slug);
+      paths.push({
+        params: { lang: locale, slug: slugWithoutLocale },
+        props: { post, locale },
+      });
+    }
+  }
+
+  return paths;
+}
+
+interface Props {
+  post: Awaited<ReturnType<typeof getCollection<'posts'>>>[number];
+  locale: Locale;
+}
+
+const { post, locale } = Astro.props;
+const { lang } = Astro.params as { lang: Locale };
+const { Content, headings } = await post.render();
+const t = translations[lang];
+---
+
+<BaseLayout
+  title={post.data.title}
+  description={post.data.description}
+  ogType="article"
+  publishedAt={post.data.publishedAt}
+  updatedAt={post.data.updatedAt}
+  lang={lang}
+  canonicalPath={localePath(`/posts/${Astro.params.slug}`, lang)}
+>
+  <article class="article">
+    <header class="article-header">
+      <h1 class="article-title">{post.data.title}</h1>
+      <div class="article-meta">
+        <span>
+          {t.published}: <time datetime={post.data.publishedAt.toISOString()}>
+            {formatDate(post.data.publishedAt, lang)}
+          </time>
+        </span>
+        {post.data.updatedAt && (
+          <span>
+            {t.updated}: <time datetime={post.data.updatedAt.toISOString()}>
+              {formatDate(post.data.updatedAt, lang)}
+            </time>
+          </span>
+        )}
+      </div>
+      {post.data.tags.length > 0 && (
+        <div class="article-tags">
+          {post.data.tags.map((tag) => (
+            <a href={localePath(`/tags/${tag}`, lang)} class="tag">{tag}</a>
+          ))}
+        </div>
+      )}
+    </header>
+
+    <TableOfContents headings={headings} lang={lang} />
+
+    <div class="article-content">
+      <Content />
+    </div>
+  </article>
+</BaseLayout>

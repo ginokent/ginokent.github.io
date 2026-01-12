@@ -1,4 +1,6 @@
 ---
+import { type Locale, translations, defaultLocale } from '../lib/i18n';
+
 interface Heading {
   depth: number;
   slug: string;
@@ -7,9 +9,11 @@ interface Heading {
 
 interface Props {
   headings: Heading[];
+  lang?: Locale;
 }
 
-const { headings } = Astro.props;
+const { headings, lang = defaultLocale } = Astro.props;
+const t = translations[lang];
 
 // Filter to h2, h3, h4 only
 const toc = headings.filter((h) => h.depth >= 2 && h.depth <= 4);
@@ -17,7 +21,7 @@ const toc = headings.filter((h) => h.depth >= 2 && h.depth <= 4);
 
 {toc.length > 0 && (
   <nav class="toc">
-    <div class="toc-title">目次</div>
+    <div class="toc-title">{t.tableOfContents}</div>
     <ul class="toc-list">
       {toc.map((heading) => (
         <li class={`depth-${heading.depth}`}>

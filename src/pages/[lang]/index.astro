@@ -1,0 +1,47 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { locales, type Locale, translations, formatDateShort, localePath, getLocaleFromSlug } from '../../lib/i18n';
+
+export function getStaticPaths() {
+  return locales.map((lang) => ({ params: { lang } }));
+}
+
+const { lang } = Astro.params as { lang: Locale };
+const t = translations[lang];
+
+// 日本語: slug が en/ で始まらない
+// 英語: slug が en/ で始まる
+const posts = (await getCollection('posts', ({ data, slug }) => {
+  if (data.draft) return false;
+  if (lang === 'ja') return !slug.startsWith('en/');
+  return slug.startsWith('en/');
+})).sort((a, b) => b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf());
+
+// slug から言語プレフィックスを除去
+function getSlugWithoutLocale(slug: string): string {
+  const { slugWithoutLocale } = getLocaleFromSlug(slug);
+  return slugWithoutLocale;
+}
+---
+
+<BaseLayout title="ginokent Blog" lang={lang} canonicalPath={localePath('/', lang)}>
+  <ul class="post-list">
+    {posts.map((post) => (
+      <li class="post-item">
+        <time class="post-date" datetime={post.data.publishedAt.toISOString()}>
+          {formatDateShort(post.data.publishedAt)}
+        </time>
+        <a href={localePath(`/posts/${getSlugWithoutLocale(post.slug)}`, lang)} class="post-title-link">
+          {post.data.title}
+        </a>
+      </li>
+    ))}
+  </ul>
+
+  {posts.length === 0 && (
+    <p style="color: var(--text-secondary); text-align: center; padding: 3rem 0;">
+      {t.noPostsYet}
+    </p>
+  )}
+</BaseLayout>

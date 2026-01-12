@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "i18n": "./scripts/i18n.sh --tool claude",
+    "i18n:gemini": "./scripts/i18n.sh --tool gemini",
+    "i18n:codex": "./scripts/i18n.sh --tool codex"
   },
   "dependencies": {
     "@astrojs/rss": "^4.0.0",

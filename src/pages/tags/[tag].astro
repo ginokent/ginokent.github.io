@@ -1,12 +1,14 @@
 ---
 import { getCollection } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import { formatDateShort, translations } from '../../lib/i18n';
 
 export async function getStaticPaths() {
-  const posts = await getCollection('posts', ({ data }) => !data.draft);
-  
+  // 日本語記事のみ（en/ で始まらない）
+  const posts = await getCollection('posts', ({ data, slug }) => !data.draft && !slug.startsWith('en/'));
+
   const tags = [...new Set(posts.flatMap((post) => post.data.tags))];
-  
+
   return tags.map((tag) => ({
     params: { tag },
     props: {
@@ -24,23 +26,25 @@ interface Props {
 }
 
 const { tag, posts } = Astro.props;
-
-function formatDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
+const t = translations.ja;
 ---
 
-<BaseLayout title={`${tag} の記事`} description={`${tag} タグの記事一覧`}>
+<BaseLayout
+  title={typeof t.taggedWith === 'function' ? t.taggedWith(tag) : `${tag}`}
+  description={typeof t.postsCount === 'function' ? t.postsCount(posts.length) : `${posts.length} posts`}
+  lang="ja"
+  canonicalPath={`/tags/${tag}`}
+>
   <div class="page-header">
     <h1 class="page-title">{tag}</h1>
-    <p class="page-description">{posts.length} 件の記事</p>
+    <p class="page-description">{typeof t.postsCount === 'function' ? t.postsCount(posts.length) : `${posts.length} posts`}</p>
   </div>
-  
+
   <ul class="post-list">
     {posts.map((post) => (
       <li class="post-item">
         <time class="post-date" datetime={post.data.publishedAt.toISOString()}>
-          {formatDate(post.data.publishedAt)}
+          {formatDateShort(post.data.publishedAt)}
         </time>
         <a href={`/posts/${post.slug}`} class="post-title-link">
           {post.data.title}

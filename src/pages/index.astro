@@ -1,21 +1,19 @@
 ---
 import { getCollection } from 'astro:content';
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { formatDateShort } from '../lib/i18n';
 
-const posts = (await getCollection('posts', ({ data }) => !data.draft))
+// 日本語記事のみ（en/ で始まらない）
+const posts = (await getCollection('posts', ({ data, slug }) => !data.draft && !slug.startsWith('en/')))
   .sort((a, b) => b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf());
-
-function formatDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
 ---
 
-<BaseLayout title="ginokent Blog">
+<BaseLayout title="ginokent Blog" lang="ja" canonicalPath="/">
   <ul class="post-list">
     {posts.map((post) => (
       <li class="post-item">
         <time class="post-date" datetime={post.data.publishedAt.toISOString()}>
-          {formatDate(post.data.publishedAt)}
+          {formatDateShort(post.data.publishedAt)}
         </time>
         <a href={`/posts/${post.slug}`} class="post-title-link">
           {post.data.title}

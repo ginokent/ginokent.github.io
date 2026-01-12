@@ -5,6 +5,14 @@ export default defineConfig({
   site: 'https://ginokent.github.io',
   // base: '/repo-name', // GitHub Pagesでリポジトリ名がサブパスになる場合
   integrations: [sitemap()],
+  i18n: {
+    defaultLocale: 'ja',
+    locales: ['ja', 'en'],
+    routing: {
+      prefixDefaultLocale: false,
+      redirectToDefaultLocale: false,
+    },
+  },
   markdown: {
     shikiConfig: {
       themes: {

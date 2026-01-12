@@ -1,8 +1,16 @@
 ---
-import BaseLayout from '../layouts/BaseLayout.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { locales, type Locale, translations, localePath } from '../../lib/i18n';
+
+export function getStaticPaths() {
+  return locales.map((lang) => ({ params: { lang } }));
+}
+
+const { lang } = Astro.params as { lang: Locale };
+const t = translations[lang];
 ---
 
-<BaseLayout title="About" description="ginokent について" lang="ja" canonicalPath="/about">
+<BaseLayout title={t.about} description="ginokent について" lang={lang} canonicalPath={localePath('/about', lang)}>
   <div class="about">
     <img src="/ginokent.png" alt="ginokent" class="about-avatar" />
     <div class="about-content">

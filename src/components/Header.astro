@@ -1,12 +1,28 @@
 ---
+import { type Locale, getAlternateLocaleUrl } from '../lib/i18n';
+
+// 現在のパスから言語を判定
+const currentPath = Astro.url.pathname;
+const currentLang: Locale = currentPath.startsWith('/en') ? 'en' : 'ja';
+const otherLang: Locale = currentLang === 'ja' ? 'en' : 'ja';
+
+// 現在の言語に応じたベースパス
+// 日本語は prefix なし、英語は /en
+const basePath = currentLang === 'en' ? '/en' : '';
+
+// 言語切り替え先の URL
+const alternateLangUrl = getAlternateLocaleUrl(currentPath, otherLang);
 ---
 
 <header class="header">
   <div class="container header-inner">
-    <a href="/" class="site-title">ginokent Blog</a>
+    <a href={basePath || '/'} class="site-title">ginokent Blog</a>
     <div class="header-actions">
-      <a href="/about" class="header-link">About</a>
+      <a href={`${basePath}/about`} class="header-link">About</a>
       <a href="/feed.xml" class="header-link" aria-label="RSS Feed">RSS</a>
+      <a href={alternateLangUrl} class="header-link lang-switch" aria-label={`Switch to ${otherLang === 'en' ? 'English' : '日本語'}`}>
+        {otherLang === 'en' ? 'EN' : 'JA'}
+      </a>
       <button class="theme-toggle" id="theme-toggle" aria-label="テーマ切り替え">
         <span class="theme-icon-light">☀️</span>
         <span class="theme-icon-dark">🌙</span>

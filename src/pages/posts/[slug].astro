@@ -2,9 +2,11 @@
 import { getCollection } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import TableOfContents from '../../components/TableOfContents.astro';
+import { formatDate, translations } from '../../lib/i18n';
 
 export async function getStaticPaths() {
-  const posts = await getCollection('posts');
+  // 日本語記事のみ（en/ で始まらない）
+  const posts = await getCollection('posts', ({ slug }) => !slug.startsWith('en/'));
   return posts.map((post) => ({
     params: { slug: post.slug },
     props: { post },
@@ -13,14 +15,7 @@ export async function getStaticPaths() {
 
 const { post } = Astro.props;
 const { Content, headings } = await post.render();
-
-function formatDate(date: Date): string {
-  return date.toLocaleDateString('ja-JP', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-}
+const t = translations.ja;
 ---
 
 <BaseLayout
@@ -29,20 +24,22 @@ function formatDate(date: Date): string {
   ogType="article"
   publishedAt={post.data.publishedAt}
   updatedAt={post.data.updatedAt}
+  lang="ja"
+  canonicalPath={`/posts/${post.slug}`}
 >
   <article class="article">
     <header class="article-header">
       <h1 class="article-title">{post.data.title}</h1>
       <div class="article-meta">
         <span>
-          公開: <time datetime={post.data.publishedAt.toISOString()}>
-            {formatDate(post.data.publishedAt)}
+          {t.published}: <time datetime={post.data.publishedAt.toISOString()}>
+            {formatDate(post.data.publishedAt, 'ja')}
           </time>
         </span>
         {post.data.updatedAt && (
           <span>
-            更新: <time datetime={post.data.updatedAt.toISOString()}>
-              {formatDate(post.data.updatedAt)}
+            {t.updated}: <time datetime={post.data.updatedAt.toISOString()}>
+              {formatDate(post.data.updatedAt, 'ja')}
             </time>
           </span>
         )}
@@ -55,9 +52,9 @@ function formatDate(date: Date): string {
         </div>
       )}
     </header>
-    
-    <TableOfContents headings={headings} />
-    
+
+    <TableOfContents headings={headings} lang="ja" />
+
     <div class="article-content">
       <Content />
     </div>

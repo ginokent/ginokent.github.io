@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import Header from '../components/Header.astro';
+import { type Locale, locales, defaultLocale, getAlternateLocaleUrl } from '../lib/i18n';
 
 interface Props {
   title: string;
@@ -9,6 +10,8 @@ interface Props {
   ogType?: 'website' | 'article';
   publishedAt?: Date;
   updatedAt?: Date;
+  lang?: Locale;
+  canonicalPath?: string;
 }
 
 const {
@@ -18,16 +21,26 @@ const {
   ogType = 'website',
   publishedAt,
   updatedAt,
+  lang = defaultLocale,
+  canonicalPath,
 } = Astro.props;
 
 const siteTitle = 'ginokent Blog';
 const fullTitle = title === siteTitle ? title : `${title} | ${siteTitle}`;
-const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+// canonicalPath が指定されていればそれを使用、なければ現在のパス
+const canonicalURL = new URL(canonicalPath || Astro.url.pathname, Astro.site);
 const ogImageURL = new URL(ogImage, Astro.site);
+
+// 言語ごとの alternate URL を生成
+const currentPath = canonicalPath || Astro.url.pathname;
+const alternateUrls = locales.map((locale) => ({
+  locale,
+  url: new URL(getAlternateLocaleUrl(currentPath, locale), Astro.site).href,
+}));
 ---
 
 <!doctype html>
-<html lang="ja">
+<html lang={lang}>
   <head>
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-EHDY4LJY6Y"></script>
@@ -43,6 +56,11 @@ const ogImageURL = new URL(ogImage, Astro.site);
     <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
     <link rel="canonical" href={canonicalURL} />
     <link rel="alternate" type="application/rss+xml" title={siteTitle} href="/feed.xml" />
+    {/* 多言語対応の alternate hreflang タグ */}
+    {alternateUrls.map(({ locale, url }) => (
+      <link rel="alternate" hreflang={locale} href={url} />
+    ))}
+    <link rel="alternate" hreflang="x-default" href={alternateUrls.find(a => a.locale === defaultLocale)?.url} />
 
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
@@ -54,7 +72,7 @@ const ogImageURL = new URL(ogImage, Astro.site);
     <meta property="og:url" content={canonicalURL} />
     <meta property="og:image" content={ogImageURL} />
     <meta property="og:site_name" content={siteTitle} />
-    <meta property="og:locale" content="ja_JP" />
+    <meta property="og:locale" content={lang === 'ja' ? 'ja_JP' : 'en_US'} />
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />

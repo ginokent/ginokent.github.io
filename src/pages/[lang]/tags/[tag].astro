@@ -1,0 +1,76 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { locales, type Locale, translations, formatDateShort, localePath, getLocaleFromSlug } from '../../../lib/i18n';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('posts', ({ data }) => !data.draft);
+  const paths = [];
+
+  for (const locale of locales) {
+    // 日本語: slug が en/ で始まらない
+    // 英語: slug が en/ で始まる
+    const localePosts = posts.filter((post) => {
+      if (locale === 'ja') return !post.slug.startsWith('en/');
+      return post.slug.startsWith('en/');
+    });
+
+    const tags = [...new Set(localePosts.flatMap((post) => post.data.tags))];
+
+    for (const tag of tags) {
+      paths.push({
+        params: { lang: locale, tag },
+        props: {
+          tag,
+          locale,
+          posts: localePosts
+            .filter((post) => post.data.tags.includes(tag))
+            .sort((a, b) => b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf()),
+        },
+      });
+    }
+  }
+
+  return paths;
+}
+
+interface Props {
+  tag: string;
+  locale: Locale;
+  posts: Awaited<ReturnType<typeof getCollection<'posts'>>>;
+}
+
+const { tag, locale, posts } = Astro.props;
+const { lang } = Astro.params as { lang: Locale };
+const t = translations[lang];
+
+function getSlugWithoutLocale(slug: string): string {
+  const { slugWithoutLocale } = getLocaleFromSlug(slug);
+  return slugWithoutLocale;
+}
+---
+
+<BaseLayout
+  title={typeof t.taggedWith === 'function' ? t.taggedWith(tag) : `${tag}`}
+  description={typeof t.postsCount === 'function' ? t.postsCount(posts.length) : `${posts.length} posts`}
+  lang={lang}
+  canonicalPath={localePath(`/tags/${tag}`, lang)}
+>
+  <div class="page-header">
+    <h1 class="page-title">{tag}</h1>
+    <p class="page-description">{typeof t.postsCount === 'function' ? t.postsCount(posts.length) : `${posts.length} posts`}</p>
+  </div>
+
+  <ul class="post-list">
+    {posts.map((post) => (
+      <li class="post-item">
+        <time class="post-date" datetime={post.data.publishedAt.toISOString()}>
+          {formatDateShort(post.data.publishedAt)}
+        </time>
+        <a href={localePath(`/posts/${getSlugWithoutLocale(post.slug)}`, lang)} class="post-title-link">
+          {post.data.title}
+        </a>
+      </li>
+    ))}
+  </ul>
+</BaseLayout>
