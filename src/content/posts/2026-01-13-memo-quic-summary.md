@@ -3,7 +3,7 @@ title: "備忘録 QUIC まとめ"
 description: "QUIC のことを調べてもすぐに調べた内容を忘れていつも同じことを調べているので自分用にまとめ。"
 publishedAt: 2026-01-13
 updatedAt: 2026-01-14
-tags: ["QUIC", "備忘録"]
+tags: ["備忘録", "QUIC"]
 ---
 
 ## 動機

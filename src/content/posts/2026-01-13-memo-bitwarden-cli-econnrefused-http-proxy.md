@@ -3,7 +3,7 @@ title: "備忘録 Bitwarden CLI で ECONNREFUSED エラーが出たら http_prox
 description: "備忘録 Bitwarden CLI で ECONNREFUSED エラーが出たら http_proxy と https_proxy に不正な値が入っていないか確認"
 publishedAt: 2026-01-13
 updatedAt: 2026-01-14
-tags: ["Bitwarden CLI", "備忘録"]
+tags: ["備忘録", "Bitwarden CLI"]
 ---
 
 ## 結論

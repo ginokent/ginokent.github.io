@@ -3,7 +3,7 @@ title: "Memo: If You Get ECONNREFUSED Error with Bitwarden CLI, Check for Invali
 description: "Memo: If You Get ECONNREFUSED Error with Bitwarden CLI, Check for Invalid Values in http_proxy and https_proxy"
 publishedAt: 2026-01-13
 updatedAt: 2026-01-14
-tags: ["Bitwarden CLI", "Memo"]
+tags: ["Memo", "Bitwarden CLI"]
 ---
 
 ## Conclusion
