@@ -17,7 +17,7 @@ interface Props {
 const {
   title,
   description = 'ginokent Blog',
-  ogImage = '/og-default.png',
+  ogImage,
   ogType = 'website',
   publishedAt,
   updatedAt,
@@ -29,7 +29,7 @@ const siteTitle = 'ginokent Blog';
 const fullTitle = title === siteTitle ? title : `${title} | ${siteTitle}`;
 // canonicalPath が指定されていればそれを使用、なければ現在のパス
 const canonicalURL = new URL(canonicalPath || Astro.url.pathname, Astro.site);
-const ogImageURL = new URL(ogImage, Astro.site);
+const ogImageURL = ogImage ? new URL(ogImage, Astro.site) : undefined;
 
 // 言語ごとの alternate URL を生成
 const currentPath = canonicalPath || Astro.url.pathname;
@@ -70,15 +70,15 @@ const alternateUrls = locales.map((locale) => ({
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonicalURL} />
-    <meta property="og:image" content={ogImageURL} />
+    {ogImageURL && <meta property="og:image" content={ogImageURL} />}
     <meta property="og:site_name" content={siteTitle} />
     <meta property="og:locale" content={lang === 'ja' ? 'ja_JP' : 'en_US'} />
 
     <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:card" content={ogImageURL ? "summary_large_image" : "summary"} />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
-    <meta name="twitter:image" content={ogImageURL} />
+    {ogImageURL && <meta name="twitter:image" content={ogImageURL} />}
 
     {publishedAt && (
       <meta property="article:published_time" content={publishedAt.toISOString()} />
