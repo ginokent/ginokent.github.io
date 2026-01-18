@@ -1,8 +1,6 @@
 ---
 title: "Memo: Personal Stance on Technical Debt from Vibe Coding (2026-01-15 version)"
-description: "If neither the reviewee nor reviewer can explain 'why this was done this way' and 'what this enables' for the code under review, it becomes debt the moment it's merged—whether written by hand or by AI..."
 publishedAt: 2026-01-15
-updatedAt: 2026-01-15
 tags: ["Memo", "Vibe Coding", "Technical Debt"]
 ---
 

@@ -1,0 +1,133 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { locales, type Locale, translations, formatDateShort, localePath, getLocaleFromSlug } from '../../lib/i18n';
+
+export function getStaticPaths() {
+  return locales.map((lang) => ({ params: { lang } }));
+}
+
+const { lang } = Astro.params as { lang: Locale };
+const t = translations[lang];
+
+// 日本語: slug が en/ で始まらない
+// 英語: slug が en/ で始まる
+const scraps = (await getCollection('scraps', ({ data, slug }) => {
+  if (data.draft) return false;
+  if (lang === 'ja') return !slug.startsWith('en/');
+  return slug.startsWith('en/');
+})).sort((a, b) => b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf());
+---
+
+<BaseLayout title={`${t.scraps} - ginokent Blog`} lang={lang} canonicalPath={localePath('/scraps', lang)}>
+  <h1 class="page-title">{t.scraps}</h1>
+  <p class="page-description">{t.scrapsDescription}</p>
+
+  <div class="scraps-list">
+    {scraps.map(async (scrap) => {
+      const { Content } = await scrap.render();
+      return (
+        <article class="scrap-card">
+          <header class="scrap-header">
+            <h2 class="scrap-title">{scrap.data.title}</h2>
+            <time class="scrap-date" datetime={scrap.data.publishedAt.toISOString()}>
+              {formatDateShort(scrap.data.publishedAt)}
+            </time>
+          </header>
+          <div class="scrap-content">
+            <Content />
+          </div>
+          {scrap.data.tags.length > 0 && (
+            <footer class="scrap-tags">
+              {scrap.data.tags.map((tag) => (
+                <span class="scrap-tag">{tag}</span>
+              ))}
+            </footer>
+          )}
+        </article>
+      );
+    })}
+  </div>
+
+  {scraps.length === 0 && (
+    <p style="color: var(--text-secondary); text-align: center; padding: 3rem 0;">
+      {t.noScrapsYet}
+    </p>
+  )}
+</BaseLayout>
+
+<style>
+  .page-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+
+  .page-description {
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+  }
+
+  .scraps-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .scrap-card {
+    background: var(--bg-secondary);
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    border: 1px solid var(--border);
+  }
+
+  .scrap-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .scrap-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .scrap-date {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .scrap-content {
+    font-size: 0.9375rem;
+    line-height: 1.7;
+  }
+
+  .scrap-content :global(p:first-child) {
+    margin-top: 0;
+  }
+
+  .scrap-content :global(p:last-child) {
+    margin-bottom: 0;
+  }
+
+  .scrap-tags {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .scrap-tag {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background: var(--bg);
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+  }
+</style>

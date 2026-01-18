@@ -15,10 +15,9 @@ const alternateLangUrl = getAlternateLocaleUrl(currentPath, otherLang);
 ---
 
 <header class="header">
-  <div class="container header-inner">
+  <div class="container header-top">
     <a href={basePath || '/'} class="site-title">ginokent Blog</a>
-    <div class="header-actions">
-      <a href={`${basePath}/about`} class="header-link">About</a>
+    <div class="header-utils">
       <a href="/feed.xml" class="header-link" aria-label="RSS Feed">RSS</a>
       <a href={alternateLangUrl} class="header-link lang-switch" aria-label={`Switch to ${otherLang === 'en' ? 'English' : '日本語'}`}>
         {otherLang === 'en' ? 'EN' : 'JA'}
@@ -29,6 +28,13 @@ const alternateLangUrl = getAlternateLocaleUrl(currentPath, otherLang);
       </button>
     </div>
   </div>
+  <nav class="header-nav">
+    <div class="container header-nav-inner">
+      <a href={`${basePath}/about`} class="header-link">About</a>
+      <a href={basePath || '/'} class="header-link">Posts</a>
+      <a href="/scraps" class="header-link">Scraps</a>
+    </div>
+  </nav>
 </header>
 
 <style>

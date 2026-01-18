@@ -17,6 +17,9 @@ export const translations = {
     about: 'About',
     feed: 'RSS',
     home: 'ホーム',
+    scraps: 'Scraps',
+    scrapsDescription: '思考の断片',
+    noScrapsYet: 'まだ何もありません',
   },
   en: {
     published: 'Published',
@@ -28,6 +31,9 @@ export const translations = {
     about: 'About',
     feed: 'RSS',
     home: 'Home',
+    scraps: 'Scraps',
+    scrapsDescription: 'Fragments of thought',
+    noScrapsYet: 'Nothing here yet',
   },
 } as const;
 
