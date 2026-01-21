@@ -16,8 +16,6 @@
 
 set -euo pipefail
 
-POSTS_DIR="src/content/posts"
-EN_DIR="$POSTS_DIR/en"
 TOOL="claude"
 FORCE=false
 
@@ -39,9 +37,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# en ディレクトリがなければ作成
-mkdir -p "$EN_DIR"
-
 # 翻訳プロンプト
 TRANSLATE_PROMPT='Translate this Japanese markdown blog post to English.
 
@@ -55,52 +50,58 @@ Rules:
 
 Input markdown:'
 
-# 日本語記事を取得（en/ 以外のファイル）
-for ja_file in "$POSTS_DIR"/*.md; do
-  # ファイルが存在しない場合はスキップ
-  [[ -f "$ja_file" ]] || continue
+# 翻訳関数
+translate_directory() {
+  local src_dir="$1"
+  local label="$2"
+  local en_dir="$src_dir/en"
 
-  filename=$(basename "$ja_file")
-  en_file="$EN_DIR/$filename"
+  mkdir -p "$en_dir"
 
-  # 既に翻訳済みでフォースモードでない場合はスキップ
-  if [[ -f "$en_file" ]] && [[ "$FORCE" != "true" ]]; then
-    echo "Skip: $filename (already translated, use --force to overwrite)"
-    continue
-  fi
+  for ja_file in "$src_dir"/*.md; do
+    [[ -f "$ja_file" ]] || continue
 
-  echo "Translating: $filename"
+    local filename
+    filename=$(basename "$ja_file")
+    local en_file="$en_dir/$filename"
 
-  # 日本語記事の内容を読み取り
-  content=$(cat "$ja_file")
+    if [[ -f "$en_file" ]] && [[ "$FORCE" != "true" ]]; then
+      echo "Skip: $label/$filename (already translated, use --force to overwrite)"
+      continue
+    fi
 
-  # ツールに応じて翻訳を実行
-  case $TOOL in
-    claude)
-      # Claude Code を使用
-      translated=$(echo "$content" | claude -p "$TRANSLATE_PROMPT")
-      ;;
-    gemini)
-      # gemini-cli を使用
-      translated=$(echo "$TRANSLATE_PROMPT
+    echo "Translating: $label/$filename"
+    local content
+    content=$(cat "$ja_file")
+
+    local translated
+    case $TOOL in
+      claude)
+        translated=$(echo "$content" | claude -p "$TRANSLATE_PROMPT")
+        ;;
+      gemini)
+        translated=$(echo "$TRANSLATE_PROMPT
 
 $content" | gemini)
-      ;;
-    codex)
-      # codex を使用
-      translated=$(echo "$TRANSLATE_PROMPT
+        ;;
+      codex)
+        translated=$(echo "$TRANSLATE_PROMPT
 
 $content" | codex)
-      ;;
-    *)
-      echo "Unknown tool: $TOOL"
-      exit 1
-      ;;
-  esac
+        ;;
+      *)
+        echo "Unknown tool: $TOOL"
+        exit 1
+        ;;
+    esac
 
-  # 翻訳結果を保存
-  echo "$translated" > "$en_file"
-  echo "Created: $en_file"
-done
+    echo "$translated" > "$en_file"
+    echo "Created: $en_file"
+  done
+}
+
+# 実行
+translate_directory "src/content/posts" "posts"
+translate_directory "src/content/scraps" "scraps"
 
 echo "Done!"
