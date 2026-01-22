@@ -348,7 +348,8 @@ div.about {
   margin: 0.375rem 0;
 }
 
-.article-content blockquote {
+.article-content blockquote,
+.scrap-content blockquote {
   margin: 1.5rem 0;
   padding: 0.75rem 1rem;
   border-left: 3px solid var(--border);

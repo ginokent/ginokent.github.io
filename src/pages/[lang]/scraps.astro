@@ -3,6 +3,11 @@ import { getCollection } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { locales, type Locale, translations, formatDateShort, localePath, getLocaleFromSlug } from '../../lib/i18n';
 
+function getScrapPermalink(slug: string, lang: Locale): string {
+  const { slugWithoutLocale } = getLocaleFromSlug(slug);
+  return localePath(`/scraps/${slugWithoutLocale}`, lang);
+}
+
 export function getStaticPaths() {
   return locales.map((lang) => ({ params: { lang } }));
 }
@@ -29,7 +34,9 @@ const scraps = (await getCollection('scraps', ({ data, slug }) => {
       return (
         <article class="scrap-card">
           <header class="scrap-header">
-            <h2 class="scrap-title">{scrap.data.title}</h2>
+            <h2 class="scrap-title">
+              <a href={getScrapPermalink(scrap.slug, lang)}>{scrap.data.title}</a>
+            </h2>
             <time class="scrap-date" datetime={scrap.data.publishedAt.toISOString()}>
               {formatDateShort(scrap.data.publishedAt)}
             </time>
@@ -93,6 +100,15 @@ const scraps = (await getCollection('scraps', ({ data, slug }) => {
     font-size: 1.125rem;
     font-weight: 600;
     margin: 0;
+  }
+
+  .scrap-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .scrap-title a:hover {
+    color: var(--link);
   }
 
   .scrap-date {

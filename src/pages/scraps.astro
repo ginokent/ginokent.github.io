@@ -18,7 +18,9 @@ const scraps = (await getCollection('scraps', ({ data, slug }) => !data.draft &&
       return (
         <article class="scrap-card">
           <header class="scrap-header">
-            <h2 class="scrap-title">{scrap.data.title}</h2>
+            <h2 class="scrap-title">
+              <a href={`/scraps/${scrap.slug}`}>{scrap.data.title}</a>
+            </h2>
             <time class="scrap-date" datetime={scrap.data.publishedAt.toISOString()}>
               {formatDateShort(scrap.data.publishedAt)}
             </time>
@@ -82,6 +84,15 @@ const scraps = (await getCollection('scraps', ({ data, slug }) => !data.draft &&
     font-size: 1.125rem;
     font-weight: 600;
     margin: 0;
+  }
+
+  .scrap-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .scrap-title a:hover {
+    color: var(--link);
   }
 
   .scrap-date {

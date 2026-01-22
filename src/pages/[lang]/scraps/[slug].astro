@@ -1,0 +1,129 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { locales, type Locale, translations, formatDate, localePath, getLocaleFromSlug } from '../../../lib/i18n';
+
+export async function getStaticPaths() {
+  const scraps = await getCollection('scraps', ({ data }) => !data.draft);
+  const paths = [];
+
+  for (const locale of locales) {
+    // 日本語: slug が en/ で始まらない
+    // 英語: slug が en/ で始まる
+    const localeScraps = scraps.filter((scrap) => {
+      if (locale === 'ja') return !scrap.slug.startsWith('en/');
+      return scrap.slug.startsWith('en/');
+    });
+
+    for (const scrap of localeScraps) {
+      const { slugWithoutLocale } = getLocaleFromSlug(scrap.slug);
+      paths.push({
+        params: { lang: locale, slug: slugWithoutLocale },
+        props: { scrap, locale },
+      });
+    }
+  }
+
+  return paths;
+}
+
+interface Props {
+  scrap: Awaited<ReturnType<typeof getCollection<'scraps'>>>[number];
+  locale: Locale;
+}
+
+const { scrap, locale } = Astro.props;
+const { lang } = Astro.params as { lang: Locale };
+const { Content } = await scrap.render();
+const t = translations[lang];
+---
+
+<BaseLayout
+  title={scrap.data.title}
+  ogType="article"
+  publishedAt={scrap.data.publishedAt}
+  lang={lang}
+  canonicalPath={localePath(`/scraps/${Astro.params.slug}`, lang)}
+>
+  <a href={localePath('/scraps', lang)} class="back-link">&larr; {t.scraps}</a>
+  <article class="scrap-article">
+    <header class="scrap-article-header">
+      <h1 class="scrap-article-title">{scrap.data.title}</h1>
+      <div class="scrap-article-meta">
+        <time datetime={scrap.data.publishedAt.toISOString()}>
+          {formatDate(scrap.data.publishedAt, lang)}
+        </time>
+      </div>
+      {scrap.data.tags.length > 0 && (
+        <div class="scrap-article-tags">
+          {scrap.data.tags.map((tag) => (
+            <span class="scrap-tag">{tag}</span>
+          ))}
+        </div>
+      )}
+    </header>
+
+    <div class="scrap-content">
+      <Content />
+    </div>
+  </article>
+</BaseLayout>
+
+<style>
+  .back-link {
+    display: inline-block;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+  }
+
+  .back-link:hover {
+    color: var(--link);
+  }
+
+  .scrap-article {
+    max-width: 42rem;
+    margin: 0 auto;
+    background: var(--bg-secondary);
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    border: 1px solid var(--border);
+  }
+
+  .scrap-article-header {
+    margin-bottom: 1rem;
+  }
+
+  .scrap-article-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0 0 0.75rem 0;
+    line-height: 1.3;
+  }
+
+  .scrap-article-meta {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+  }
+
+  .scrap-article-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .scrap-tag {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background: var(--bg);
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+  }
+
+  .scrap-content {
+    font-size: 0.9375rem;
+    line-height: 1.7;
+  }
+</style>
