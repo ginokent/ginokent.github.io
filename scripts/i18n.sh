@@ -46,7 +46,8 @@ Rules:
 3. Translate the body content to natural, fluent English
 4. Keep all code blocks, links, and markdown formatting unchanged
 5. Keep technical terms (like command names, file paths, etc.) as-is
-6. Output ONLY the translated markdown, no explanations
+6. Keep blockquotes (lines starting with ">") unchanged - do NOT translate them
+7. Output ONLY the translated markdown, no explanations
 
 Input markdown:'
 
