@@ -1,8 +1,8 @@
 ---
 title: "GUI を持たないリモート環境で Codex CLI にログイン"
 description: "GUI を持たないリモート環境で Codex CLI にログインする方法をメモ書き。"
-publishedAt: 2025-09-13
-updatedAt: 2026-01-12
+publishedAt: 2025-09-13T09:00:00+09:00
+updatedAt: 2026-01-12T09:00:00+09:00
 tags: ["Codex"]
 ---
 

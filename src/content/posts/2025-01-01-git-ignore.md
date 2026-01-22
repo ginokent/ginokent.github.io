@@ -1,8 +1,8 @@
 ---
 title: "git-ignore: .gitignore をコマンド一発で生成する CLI ツール"
 description: "git-ignore は、指定した言語の .gitignore をコマンド一発で生成する CLI ツールです。"
-publishedAt: 2025-01-01
-updatedAt: 2026-01-12
+publishedAt: 2025-01-01T09:00:00+09:00
+updatedAt: 2026-01-12T09:00:00+09:00
 tags: ["Git", "GitHub", "bash"]
 ---
 

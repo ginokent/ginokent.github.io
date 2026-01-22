@@ -1,8 +1,8 @@
 ---
 title: "Frequent net::ERR_CONNECTION_RESET Issues on Rakuten Mobile 5G and How to Fix Them"
 description: "Documenting the frequent net::ERR_CONNECTION_RESET issues on Rakuten Mobile 5G and how to resolve them."
-publishedAt: 2026-01-11
-updatedAt: 2026-01-12
+publishedAt: 2026-01-11T09:00:00+09:00
+updatedAt: 2026-01-12T09:00:00+09:00
 tags: ["Rakuten Mobile", "net::ERR_CONNECTION_RESET", "BIG-IP", "WireGuard"]
 ---
 

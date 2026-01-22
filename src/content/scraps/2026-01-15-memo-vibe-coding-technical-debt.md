@@ -1,6 +1,6 @@
 ---
 title: "メモ: Vibe Coding で発生する技術的負債に対しての個人的スタンスの言語化 (2026-01-15 版)"
-publishedAt: 2026-01-15
+publishedAt: 2026-01-15T09:00:00+09:00
 tags: ["備忘録", "Vibe Coding", "技術的負債"]
 ---
 

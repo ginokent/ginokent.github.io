@@ -1,8 +1,8 @@
 ---
 title: "備忘録 GnuPG 秘密鍵の移行"
 description: "PC を新しくした際に GnuPG 秘密鍵を移行したので備忘録。"
-publishedAt: 2026-01-14
-updatedAt: 2026-01-14
+publishedAt: 2026-01-14T09:00:00+09:00
+updatedAt: 2026-01-14T09:00:00+09:00
 tags: ["備忘録", "GnuPG"]
 ---
 

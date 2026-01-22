@@ -1,8 +1,8 @@
 ---
 title: "備忘録 鍵確立とメッセージ認証について (Diffie-Hellman 鍵共有、公開鍵暗号、事前共有鍵、エフェメラル鍵、 nonce)"
 description: "鍵確立とメッセージ認証について (Diffie-Hellman 鍵共有、公開鍵暗号、事前共有鍵、エフェメラル鍵、 nonce あたり) について自分用にまとめ。"
-publishedAt: 2026-01-14
-updatedAt: 2026-01-14
+publishedAt: 2026-01-14T10:00:00+09:00
+updatedAt: 2026-01-14T10:00:00+09:00
 tags: ["備忘録", "鍵交換", "メッセージ認証", "Diffie-Hellman", "公開鍵暗号", "事前共有鍵", "エフェメラル鍵", "nonce"]
 ---
 

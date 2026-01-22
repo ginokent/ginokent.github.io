@@ -1,8 +1,8 @@
 ---
 title: "git-ignore: A CLI Tool to Generate .gitignore with a Single Command"
 description: "git-ignore is a CLI tool that generates .gitignore files for specified languages with a single command."
-publishedAt: 2025-01-01
-updatedAt: 2026-01-12
+publishedAt: 2025-01-01T09:00:00+09:00
+updatedAt: 2026-01-12T09:00:00+09:00
 tags: ["Git", "GitHub", "bash"]
 ---
 

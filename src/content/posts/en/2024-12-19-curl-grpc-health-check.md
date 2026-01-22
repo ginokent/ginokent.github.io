@@ -1,8 +1,8 @@
 ---
 title: "Testing gRPC Connectivity with curl"
 description: "A quick note for those who want to test gRPC connectivity using curl."
-publishedAt: 2024-12-19
-updatedAt: 2026-01-12
+publishedAt: 2024-12-19T09:00:00+09:00
+updatedAt: 2026-01-12T09:00:00+09:00
 tags: ["cURL", "gRPC", "bash"]
 ---
 

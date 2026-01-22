@@ -1,8 +1,8 @@
 ---
 title: "Rakuten Mobile 5G 回線で net::ERR_CONNECTION_RESET が頻発する問題と解決策"
 description: "Rakuten Mobile 5G 回線で net::ERR_CONNECTION_RESET が頻発する問題と解決策について書き残す。"
-publishedAt: 2026-01-11
-updatedAt: 2026-01-12
+publishedAt: 2026-01-11T09:00:00+09:00
+updatedAt: 2026-01-12T09:00:00+09:00
 tags: ["Rakuten Mobile", "net::ERR_CONNECTION_RESET", "BIG-IP", "WireGuard"]
 ---
 

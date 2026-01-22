@@ -1,8 +1,8 @@
 ---
 title: "Memo: Key Establishment and Message Authentication (Diffie-Hellman Key Exchange, Public Key Cryptography, Pre-Shared Keys, Ephemeral Keys, Nonces)"
 description: "A personal summary of key establishment and message authentication topics including Diffie-Hellman key exchange, public key cryptography, pre-shared keys, ephemeral keys, and nonces."
-publishedAt: 2026-01-14
-updatedAt: 2026-01-14
+publishedAt: 2026-01-14T09:00:00+09:00
+updatedAt: 2026-01-14T09:00:00+09:00
 tags: ["memo", "key exchange", "message authentication", "Diffie-Hellman", "public key cryptography", "pre-shared key", "ephemeral key", "nonce"]
 ---
 

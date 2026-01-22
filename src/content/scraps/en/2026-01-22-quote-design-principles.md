@@ -1,6 +1,6 @@
 ---
 title: "On Design Principles"
-publishedAt: 2026-01-22
+publishedAt: 2026-01-22T09:00:00+09:00
 tags: ["design"]
 ---
 
@@ -9,6 +9,8 @@ I saw this on X and it stuck with me, so I'm noting it down for future reference
 > [Follow trends for trivial matters, follow standards for important matters, and design your own solutions for domain-specific matters.](https://x.com/uzulla/status/1639169417056763904)
 
 > [What's really profound about this is that for trivial matters, it's not that you 'may follow' trends—you 'must follow' them. Otherwise, you'll never get a genuine and safe opportunity to engage with trending things, and you risk being completely left behind by new paradigms.](https://x.com/wgextra/status/2013619984665088098)
+
+---
 
 > Follow trends for trivial matters
 

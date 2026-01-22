@@ -1,8 +1,8 @@
 ---
 title: "curl で gRPC の疎通確認"
 description: "curl で gRPC の疎通確認をしたい人向けのメモ書き。"
-publishedAt: 2024-12-19
-updatedAt: 2026-01-12
+publishedAt: 2024-12-19T09:00:00+09:00
+updatedAt: 2026-01-12T09:00:00+09:00
 tags: ["cURL", "gRPC", "bash"]
 ---
 

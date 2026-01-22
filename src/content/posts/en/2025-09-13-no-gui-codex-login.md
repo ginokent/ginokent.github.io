@@ -1,8 +1,8 @@
 ---
 title: "Logging into Codex CLI on a Remote Environment Without GUI"
 description: "A memo on how to log into Codex CLI on a remote environment without GUI."
-publishedAt: 2025-09-13
-updatedAt: 2026-01-12
+publishedAt: 2025-09-13T09:00:00+09:00
+updatedAt: 2026-01-12T09:00:00+09:00
 tags: ["Codex"]
 ---
 

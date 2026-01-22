@@ -1,8 +1,8 @@
 ---
 title: "Memo: GnuPG Secret Key Migration"
 description: "A memo on migrating GnuPG secret keys when setting up a new PC."
-publishedAt: 2026-01-14
-updatedAt: 2026-01-14
+publishedAt: 2026-01-14T09:00:00+09:00
+updatedAt: 2026-01-14T09:00:00+09:00
 tags: ["Memo", "GnuPG"]
 ---
 

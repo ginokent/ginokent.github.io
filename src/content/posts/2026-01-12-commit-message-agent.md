@@ -1,8 +1,8 @@
 ---
 title: "Claude Code の Subagent でメインエージェントのコンテキストを節約しながら Conventional Commits でコミットメッセージを生成する"
 description: "Claude Code の Subagent でメインエージェントのコンテキストを節約しながら Conventional Commits でコミットメッセージを生成する方法について書いています。"
-publishedAt: 2026-01-12
-updatedAt: 2026-01-12
+publishedAt: 2026-01-12T09:00:00+09:00
+updatedAt: 2026-01-12T09:00:00+09:00
 tags: ["Claude Code", "Git", "Conventional Commits", "AI"]
 ---
 

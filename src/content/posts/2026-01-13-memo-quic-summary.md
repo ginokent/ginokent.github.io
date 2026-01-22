@@ -1,8 +1,8 @@
 ---
 title: "備忘録 QUIC まとめ"
 description: "QUIC のことを調べてもすぐに調べた内容を忘れていつも同じことを調べているので自分用にまとめ。"
-publishedAt: 2026-01-13
-updatedAt: 2026-01-14
+publishedAt: 2026-01-13T10:00:00+09:00
+updatedAt: 2026-01-14T09:00:00+09:00
 tags: ["備忘録", "QUIC"]
 ---
 

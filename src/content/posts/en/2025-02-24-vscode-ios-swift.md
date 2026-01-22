@@ -1,8 +1,8 @@
 ---
 title: "Fix 'Cannot load underlying module for UIKit' Error in VSCode for iOS Swift Development"
 description: "A quick note for those encountering the `Cannot load underlying module for 'UIKit'` error from SourceKit when developing Swift for iOS in VSCode."
-publishedAt: 2025-02-24
-updatedAt: 2026-01-12
+publishedAt: 2025-02-24T09:00:00+09:00
+updatedAt: 2026-01-12T09:00:00+09:00
 tags: ["iOS", "Swift", "VS Code"]
 ---
 

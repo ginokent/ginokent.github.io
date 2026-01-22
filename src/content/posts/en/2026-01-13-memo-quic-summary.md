@@ -1,8 +1,8 @@
 ---
 title: "Memo: QUIC Summary"
 description: "I keep forgetting what I've learned about QUIC and end up researching the same things repeatedly, so this is a summary for my own reference."
-publishedAt: 2026-01-13
-updatedAt: 2026-01-14
+publishedAt: 2026-01-13T09:00:00+09:00
+updatedAt: 2026-01-14T09:00:00+09:00
 tags: ["Memo", "QUIC"]
 ---
 

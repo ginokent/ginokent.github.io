@@ -1,6 +1,6 @@
 ---
 title: "Memo: Personal Stance on Technical Debt from Vibe Coding (2026-01-15 version)"
-publishedAt: 2026-01-15
+publishedAt: 2026-01-15T09:00:00+09:00
 tags: ["Memo", "Vibe Coding", "Technical Debt"]
 ---
 

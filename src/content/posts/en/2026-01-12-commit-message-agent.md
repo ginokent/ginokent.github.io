@@ -1,8 +1,8 @@
 ---
 title: "Save Main Agent Context in Claude Code by Using Subagents to Generate Conventional Commits Messages"
 description: "This post explains how to save main agent context in Claude Code by using subagents to generate Conventional Commits messages."
-publishedAt: 2026-01-12
-updatedAt: 2026-01-12
+publishedAt: 2026-01-12T09:00:00+09:00
+updatedAt: 2026-01-12T09:00:00+09:00
 tags: ["Claude Code", "Git", "Conventional Commits", "AI"]
 ---
 
