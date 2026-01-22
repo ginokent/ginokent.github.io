@@ -120,6 +120,8 @@ const scraps = (await getCollection('scraps', ({ data, slug }) => {
   .scrap-content {
     font-size: 0.9375rem;
     line-height: 1.7;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
 
   .scrap-content :global(p:first-child) {
