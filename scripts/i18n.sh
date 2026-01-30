@@ -8,6 +8,14 @@
 #   --tool <name>  翻訳に使用する CLI ツール (default: claude)
 #   --force        既存の翻訳を上書き
 #
+# 動作:
+#   - 翻訳後ファイルが存在しなければ翻訳する
+#   - 翻訳後ファイルが存在する場合:
+#     - 翻訳元の updatedAt が翻訳後の updatedAt より新しければ再翻訳する
+#     - updatedAt が同じ or 翻訳元の方が古ければスキップ
+#     - 翻訳元に updatedAt がなければスキップ (現状維持)
+#   - --force を指定すると常に上書き翻訳する
+#
 # 例:
 #   pnpm run i18n              # claude を使用
 #   pnpm run i18n:gemini       # gemini-cli を使用
@@ -36,6 +44,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# frontmatter から updatedAt の値を取得する関数
+# 見つからなければ空文字を返す
+get_updated_at() {
+  local file="$1"
+  grep -m1 '^updatedAt:' "$file" | sed 's/^updatedAt:[[:space:]]*//'
+}
 
 # 翻訳プロンプト
 TRANSLATE_PROMPT='Translate this Japanese markdown blog post to English.
@@ -67,8 +82,19 @@ translate_directory() {
     local en_file="$en_dir/$filename"
 
     if [[ -f "$en_file" ]] && [[ "$FORCE" != "true" ]]; then
-      echo "Skip: $label/$filename (already translated, use --force to overwrite)"
-      continue
+      # updatedAt を比較して、翻訳元が新しければ再翻訳
+      local ja_updated_at en_updated_at
+      ja_updated_at=$(get_updated_at "$ja_file")
+      en_updated_at=$(get_updated_at "$en_file")
+
+      if [[ -n "$ja_updated_at" ]] && [[ -z "$en_updated_at" ]]; then
+        echo "Re-translating: $label/$filename (translated file has no updatedAt)"
+      elif [[ -n "$ja_updated_at" ]] && [[ -n "$en_updated_at" ]] && [[ "$ja_updated_at" > "$en_updated_at" ]]; then
+        echo "Re-translating: $label/$filename (source updatedAt: $ja_updated_at > translated: $en_updated_at)"
+      else
+        echo "Skip: $label/$filename (already translated, use --force to overwrite)"
+        continue
+      fi
     fi
 
     echo "Translating: $label/$filename"
