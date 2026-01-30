@@ -2,8 +2,88 @@
 title: "Claude Code の Subagent でメインエージェントのコンテキストを節約しながら Conventional Commits でコミットメッセージを生成する"
 description: "Claude Code の Subagent でメインエージェントのコンテキストを節約しながら Conventional Commits でコミットメッセージを生成する方法について書いています。"
 publishedAt: 2026-01-12T09:00:00+09:00
-updatedAt: 2026-01-12T09:00:00+09:00
+updatedAt: 2026-01-30T09:00:00+09:00
 tags: ["Claude Code", "Git", "Conventional Commits", "AI"]
+---
+
+## 2026-01-30 更新
+
+Skills の YAML front matter に `context` オプションが追加されたため、 Agent を分けなくても context を浪費せずに済むようになりました。
+
+```markdown .claude/skills/commit-message/SKILL.md
+---
+context: fork
+---
+
+...
+```
+
+と書いてやればそれだけで、勝手に現在の context を fork した別の context で処理を実行してくれます。  
+
+最終的に以下のような Skill に落ち着きました。  
+
+```markdown ~/.claude/skills/commit-message/SKILL.md
+---
+name: commit-message
+description: "Generate commit message candidates in Conventional Commits format. Triggers on: /commit-message, 'generate commit message', 'コミットメッセージ'"
+context: fork
+agent: general-purpose
+---
+
+# Commit Message Generator
+
+Generate commit message candidates following Conventional Commits 1.0.0.
+
+## Language Rules
+- Commit messages: Always in English
+- All other output (explanations, notes, errors): Use the same language as the user's input
+
+## Workflow
+1. Run `git status --porcelain` to check repository state
+2. Run `git diff --cached --stat` to check staged changes
+3. If no staged changes, run `git diff --stat` for unstaged changes
+4. If no changes at all, inform the user and stop
+5. Run full diff: `git diff --cached` or `git diff`
+6. Generate 5 commit message options
+
+## Commit Message Format
+
+<type>(<optional scope>): <description>
+
+
+## Types
+- feat: New feature
+- fix: Bug fix
+- docs: Documentation only
+- style: Formatting (no code change)
+- refactor: Code restructuring
+- test: Adding/updating tests
+- chore: Maintenance tasks
+- perf: Performance improvement
+- ci: CI/CD changes
+- build: Build system changes
+
+## Rules
+- Use imperative mood ("Add" not "Added")
+- Max 50 chars for subject line
+- No period at end
+- Be specific about what changed
+- Scope is optional but recommended when changes are localized
+
+## Output Format
+Return exactly 5 numbered options, then instruct the main agent to ask user for selection:
+
+
+1. type(scope): message
+2. type(scope): message
+3. type: message
+4. type(scope): message
+5. type: message
+
+```
+
+以下、元記事です。
+
 ---
 
 ## 動機

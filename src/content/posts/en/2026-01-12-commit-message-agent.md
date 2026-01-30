@@ -2,8 +2,88 @@
 title: "Save Main Agent Context in Claude Code by Using Subagents to Generate Conventional Commits Messages"
 description: "This post explains how to save main agent context in Claude Code by using subagents to generate Conventional Commits messages."
 publishedAt: 2026-01-12T09:00:00+09:00
-updatedAt: 2026-01-12T09:00:00+09:00
+updatedAt: 2026-01-30T09:00:00+09:00
 tags: ["Claude Code", "Git", "Conventional Commits", "AI"]
+---
+
+## 2026-01-30 Update
+
+A `context` option has been added to the Skills YAML front matter, so you no longer need to split agents to avoid wasting context.
+
+```markdown .claude/skills/commit-message/SKILL.md
+---
+context: fork
+---
+
+...
+```
+
+Just writing this will automatically run the process in a separate context forked from the current one.
+
+I eventually settled on the following Skill.
+
+```markdown ~/.claude/skills/commit-message/SKILL.md
+---
+name: commit-message
+description: "Generate commit message candidates in Conventional Commits format. Triggers on: /commit-message, 'generate commit message', 'コミットメッセージ'"
+context: fork
+agent: general-purpose
+---
+
+# Commit Message Generator
+
+Generate commit message candidates following Conventional Commits 1.0.0.
+
+## Language Rules
+- Commit messages: Always in English
+- All other output (explanations, notes, errors): Use the same language as the user's input
+
+## Workflow
+1. Run `git status --porcelain` to check repository state
+2. Run `git diff --cached --stat` to check staged changes
+3. If no staged changes, run `git diff --stat` for unstaged changes
+4. If no changes at all, inform the user and stop
+5. Run full diff: `git diff --cached` or `git diff`
+6. Generate 5 commit message options
+
+## Commit Message Format
+
+<type>(<optional scope>): <description>
+
+
+## Types
+- feat: New feature
+- fix: Bug fix
+- docs: Documentation only
+- style: Formatting (no code change)
+- refactor: Code restructuring
+- test: Adding/updating tests
+- chore: Maintenance tasks
+- perf: Performance improvement
+- ci: CI/CD changes
+- build: Build system changes
+
+## Rules
+- Use imperative mood ("Add" not "Added")
+- Max 50 chars for subject line
+- No period at end
+- Be specific about what changed
+- Scope is optional but recommended when changes are localized
+
+## Output Format
+Return exactly 5 numbered options, then instruct the main agent to ask user for selection:
+
+
+1. type(scope): message
+2. type(scope): message
+3. type: message
+4. type(scope): message
+5. type: message
+
+```
+
+Below is the original article.
+
 ---
 
 ## Motivation
