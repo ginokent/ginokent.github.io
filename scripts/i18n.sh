@@ -49,7 +49,7 @@ done
 # 見つからなければ空文字を返す
 get_updated_at() {
   local file="$1"
-  grep -m1 '^updatedAt:' "$file" | sed 's/^updatedAt:[[:space:]]*//'
+  grep -m1 '^updatedAt:' "$file" | sed 's/^updatedAt:[[:space:]]*//' || true
 }
 
 # 翻訳プロンプト
