@@ -152,3 +152,6 @@ vite.config.ts.timestamp-*
 
 # Astro files
 .astro/
+
+# other
+.claude/
