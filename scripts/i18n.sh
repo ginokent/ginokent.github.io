@@ -104,7 +104,7 @@ translate_directory() {
     local translated
     case $TOOL in
       claude)
-        translated=$(echo "$content" | claude -p "$TRANSLATE_PROMPT")
+        translated=$(echo "$content" | claude --permission-mode "acceptEdits" -p "$TRANSLATE_PROMPT")
         ;;
       gemini)
         translated=$(echo "$TRANSLATE_PROMPT
