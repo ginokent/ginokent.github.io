@@ -357,6 +357,10 @@ div.about {
   color: var(--text-secondary);
 }
 
+.scrap-content img {
+  max-height: 240px;
+}
+
 .article-content code {
   font-family: var(--font-mono);
   font-size: 0.875em;
