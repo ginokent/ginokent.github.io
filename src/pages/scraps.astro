@@ -55,19 +55,19 @@ const scraps = (await getCollection('scraps', ({ data, slug }) => !data.draft &&
 
   .page-description {
     color: var(--text-secondary);
-    margin-bottom: 2rem;
+    margin-bottom: 1.5rem;
   }
 
   .scraps-list {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
   }
 
   .scrap-card {
     background: var(--bg-secondary);
     border-radius: 0.5rem;
-    padding: 1.5rem;
+    padding: 1rem;
     border: 1px solid var(--border);
   }
 
@@ -81,7 +81,7 @@ const scraps = (await getCollection('scraps', ({ data, slug }) => !data.draft &&
   }
 
   .scrap-header {
-    margin-bottom: 1rem;
+    margin-bottom: 0.5rem;
   }
 
   .scrap-date {
@@ -92,7 +92,7 @@ const scraps = (await getCollection('scraps', ({ data, slug }) => !data.draft &&
 
   .scrap-content {
     font-size: 0.9375rem;
-    line-height: 1.7;
+    line-height: 1.6;
     overflow-wrap: break-word;
     word-break: break-word;
   }
@@ -106,7 +106,7 @@ const scraps = (await getCollection('scraps', ({ data, slug }) => !data.draft &&
   }
 
   .scrap-tags {
-    margin-top: 1rem;
+    margin-top: 0.75rem;
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
