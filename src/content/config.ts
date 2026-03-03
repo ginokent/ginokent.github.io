@@ -15,7 +15,6 @@ const posts = defineCollection({
 const scraps = defineCollection({
   type: 'content',
   schema: z.object({
-    title: z.string(),
     publishedAt: z.coerce.date(),
     tags: z.array(z.string()).default([]),
     draft: z.boolean().default(false),

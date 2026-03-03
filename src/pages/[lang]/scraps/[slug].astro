@@ -2,6 +2,7 @@
 import { getCollection } from 'astro:content';
 import BaseLayout from '../../../layouts/BaseLayout.astro';
 import { locales, type Locale, translations, formatDate, localePath, getLocaleFromSlug } from '../../../lib/i18n';
+import { getScrapSeoTitle } from '../../../lib/scrap';
 
 export async function getStaticPaths() {
   const scraps = await getCollection('scraps', ({ data }) => !data.draft);
@@ -39,7 +40,7 @@ const t = translations[lang];
 ---
 
 <BaseLayout
-  title={scrap.data.title}
+  title={getScrapSeoTitle(scrap.body)}
   ogType="article"
   publishedAt={scrap.data.publishedAt}
   lang={lang}
@@ -48,7 +49,6 @@ const t = translations[lang];
   <a href={localePath('/scraps', lang)} class="back-link">&larr; {t.scraps}</a>
   <article class="scrap-article">
     <header class="scrap-article-header">
-      <h1 class="scrap-article-title">{scrap.data.title}</h1>
       <div class="scrap-article-meta">
         <time datetime={scrap.data.publishedAt.toISOString()}>
           {formatDate(scrap.data.publishedAt, lang)}
@@ -93,13 +93,6 @@ const t = translations[lang];
 
   .scrap-article-header {
     margin-bottom: 1rem;
-  }
-
-  .scrap-article-title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    margin: 0 0 0.75rem 0;
-    line-height: 1.3;
   }
 
   .scrap-article-meta {

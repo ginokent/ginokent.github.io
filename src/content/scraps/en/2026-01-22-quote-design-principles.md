@@ -1,8 +1,9 @@
 ---
-title: "On Design Principles"
 publishedAt: 2026-01-22T09:00:00+09:00
 tags: ["design"]
 ---
+
+On Design Principles
 
 I saw this on X and it stuck with me, so I'm noting it down for future reference.
 

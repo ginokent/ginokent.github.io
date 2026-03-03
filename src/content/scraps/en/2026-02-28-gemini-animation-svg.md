@@ -1,8 +1,9 @@
 ---
-title: "Gemini Can Now Create SVG Animations This Good?"
 publishedAt: 2026-02-28T09:00:00+09:00
 tags: ["thoughts"]
 ---
+
+Gemini Can Now Create SVG Animations This Good?
 
 I happened to see a post with some sample prompts, casually tried one out, and was genuinely blown away by how legit the result looked
 

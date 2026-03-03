@@ -1,8 +1,9 @@
 ---
-title: "Thoughts on 'Anthropic Survey Confirms Signs of Disempowerment Among Claude Users'"
 publishedAt: 2026-01-30T09:00:00+09:00
 tags: ["thoughts"]
 ---
+
+Thoughts on 'Anthropic Survey Confirms Signs of Disempowerment Among Claude Users'
 
 > [Anthropic調査でClaude利用者の「無力化」兆候を確認 / X](https://x.com/i/trending/2017178468497142087)
 > 

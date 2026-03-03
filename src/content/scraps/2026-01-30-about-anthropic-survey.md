@@ -1,8 +1,9 @@
 ---
-title: "「Anthropic 調査で Claude 利用者の「無力化」兆候を確認」について思うこと"
 publishedAt: 2026-01-30T09:00:00+09:00
 tags: ["思ったこと"]
 ---
+
+「Anthropic 調査で Claude 利用者の「無力化」兆候を確認」について思うこと
 
 > [Anthropic調査でClaude利用者の「無力化」兆候を確認 / X](https://x.com/i/trending/2017178468497142087)
 > 
