@@ -15,4 +15,4 @@ I happened to see a post with some sample prompts, casually tried one out, and w
 > 
 > ...
 
-![checkout.svg](/images/scraps/2026-02-28-gemini-animation-svg_checkout.svg)
+[![checkout.svg](/images/scraps/2026-02-28-gemini-animation-svg_checkout.svg)](/images/scraps/2026-02-28-gemini-animation-svg_checkout.svg)

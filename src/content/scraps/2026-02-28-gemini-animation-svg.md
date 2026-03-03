@@ -15,4 +15,4 @@ Gemini って今こんな高品質な SVG アニメ作れるのか
 > 
 > ...
 
-![checkout.svg](/images/scraps/2026-02-28-gemini-animation-svg_checkout.svg)
+[![checkout.svg](/images/scraps/2026-02-28-gemini-animation-svg_checkout.svg)](/images/scraps/2026-02-28-gemini-animation-svg_checkout.svg)

@@ -32,25 +32,25 @@ const scraps = (await getCollection('scraps', ({ data, slug }) => {
     {scraps.map(async (scrap) => {
       const { Content } = await scrap.render();
       return (
-        <a href={getScrapPermalink(scrap.slug, lang)} class="scrap-card-link">
-          <article class="scrap-card">
-            <header class="scrap-header">
+        <article class="scrap-card">
+          <header class="scrap-header">
+            <a href={getScrapPermalink(scrap.slug, lang)} class="scrap-date-link">
               <time class="scrap-date" datetime={scrap.data.publishedAt.toISOString()}>
                 {formatDateShort(scrap.data.publishedAt)}
               </time>
-            </header>
-            <div class="scrap-content">
-              <Content />
-            </div>
-            {scrap.data.tags.length > 0 && (
-              <footer class="scrap-tags">
-                {scrap.data.tags.map((tag) => (
-                  <span class="scrap-tag">{tag}</span>
-                ))}
-              </footer>
-            )}
-          </article>
-        </a>
+            </a>
+          </header>
+          <div class="scrap-content">
+            <Content />
+          </div>
+          {scrap.data.tags.length > 0 && (
+            <footer class="scrap-tags">
+              {scrap.data.tags.map((tag) => (
+                <span class="scrap-tag">{tag}</span>
+              ))}
+            </footer>
+          )}
+        </article>
       );
     })}
   </div>
@@ -80,12 +80,6 @@ const scraps = (await getCollection('scraps', ({ data, slug }) => {
     gap: 1.5rem;
   }
 
-  .scrap-card-link {
-    display: block;
-    text-decoration: none;
-    color: inherit;
-  }
-
   .scrap-card {
     background: var(--bg-secondary);
     border-radius: 0.5rem;
@@ -93,8 +87,13 @@ const scraps = (await getCollection('scraps', ({ data, slug }) => {
     border: 1px solid var(--border);
   }
 
-  .scrap-card-link:hover .scrap-card {
-    border-color: var(--link);
+  .scrap-date-link {
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .scrap-date-link:hover {
+    color: var(--accent);
   }
 
   .scrap-header {
@@ -124,8 +123,6 @@ const scraps = (await getCollection('scraps', ({ data, slug }) => {
 
   .scrap-tags {
     margin-top: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--border);
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;

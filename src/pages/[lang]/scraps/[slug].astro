@@ -54,18 +54,19 @@ const t = translations[lang];
           {formatDate(scrap.data.publishedAt, lang)}
         </time>
       </div>
-      {scrap.data.tags.length > 0 && (
-        <div class="scrap-article-tags">
-          {scrap.data.tags.map((tag) => (
-            <span class="scrap-tag">{tag}</span>
-          ))}
-        </div>
-      )}
     </header>
 
     <div class="scrap-content">
       <Content />
     </div>
+
+    {scrap.data.tags.length > 0 && (
+      <footer class="scrap-article-tags">
+        {scrap.data.tags.map((tag) => (
+          <span class="scrap-tag">{tag}</span>
+        ))}
+      </footer>
+    )}
   </article>
 </BaseLayout>
 
@@ -79,7 +80,7 @@ const t = translations[lang];
   }
 
   .back-link:hover {
-    color: var(--link);
+    color: var(--accent);
   }
 
   .scrap-article {
@@ -98,10 +99,10 @@ const t = translations[lang];
   .scrap-article-meta {
     font-size: 0.875rem;
     color: var(--text-secondary);
-    margin-bottom: 0.75rem;
   }
 
   .scrap-article-tags {
+    margin-top: 1rem;
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
