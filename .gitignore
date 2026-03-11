@@ -153,5 +153,8 @@ vite.config.ts.timestamp-*
 # Astro files
 .astro/
 
+# Slack bot
+tools/slack-bot/.message-map.json
+
 # other
 .claude/
