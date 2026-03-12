@@ -1,5 +1,7 @@
 import { defineConfig } from 'astro/config';
 import sitemap from '@astrojs/sitemap';
+import remarkBreaks from 'remark-breaks';
+import rehypeParagraphBreaks from './src/plugins/rehype-paragraph-breaks.mjs';
 
 export default defineConfig({
   site: 'https://ginokent.github.io',
@@ -14,6 +16,8 @@ export default defineConfig({
     },
   },
   markdown: {
+    remarkPlugins: [remarkBreaks],
+    rehypePlugins: [rehypeParagraphBreaks],
     shikiConfig: {
       themes: {
         light: 'github-light',
