@@ -1,28 +1,24 @@
-import { resolve } from "node:path";
+import { join } from "node:path";
+import { readdir } from "node:fs/promises";
+import { config } from "../config.js";
 
-const MAP_PATH = resolve(import.meta.dir, "../../.message-map.json");
+const SCRAPS_DIR = join(config.projectRoot, "src", "content", "scraps");
 
-type MessageMap = Record<string, string>;
-
-async function load(): Promise<MessageMap> {
-  const file = Bun.file(MAP_PATH);
-  if (!(await file.exists())) return {};
-  return file.json();
-}
-
-async function save(map: MessageMap): Promise<void> {
-  await Bun.write(MAP_PATH, JSON.stringify(map, null, 2) + "\n");
-}
-
-/** ts に対応する scrap ファイルパスを取得 */
-export async function getFilePath(ts: string): Promise<string | undefined> {
-  const map = await load();
-  return map[ts];
-}
-
-/** ts と scrap ファイルパスのマッピングを保存 */
-export async function setFilePath(ts: string, filePath: string): Promise<void> {
-  const map = await load();
-  map[ts] = filePath;
-  await save(map);
+/**
+ * slackPath を frontmatter に持つ scrap ファイルを検索する。
+ * 外部状態ファイルではなく実ファイルの frontmatter を正とすることで、キャッシュの乖離を防ぐ。
+ */
+export async function findScrapBySlackPath(slackPath: string): Promise<string | undefined> {
+  const files = await readdir(SCRAPS_DIR);
+  for (const name of files) {
+    if (!name.endsWith(".md")) continue;
+    const filePath = join(SCRAPS_DIR, name);
+    const content = await Bun.file(filePath).text();
+    // frontmatter 内の slackPath を確認
+    const match = content.match(/^---\n[\s\S]*?\n---/);
+    if (match && match[0].includes(`slackPath: ${slackPath}`)) {
+      return filePath;
+    }
+  }
+  return undefined;
 }

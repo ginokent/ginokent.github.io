@@ -18,6 +18,7 @@ function formatISO8601JST(date: Date): string {
   return `${y}-${m}-${d}T${h}:${min}:${s}+09:00`;
 }
 
+/** ファイル名用の UTC タイムスタンプを生成する（例: 2026-03-13T05-23-35Z） */
 function formatFilePrefix(date: Date): string {
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, "0");
@@ -67,13 +68,12 @@ export async function writeNewScrap(ts: string, body: string, slackPath?: string
 }
 
 /**
- * 既存 scrap ファイルを上書きする。
- * frontmatter は保持しつつ本文のみ更新する。
+ * 既存 scrap ファイルの本文を上書きする（frontmatter は保持）。
+ * findScrapBySlackPath で実ファイルから検索済みのパスを受け取るため、ファイル不在チェックは不要。
  */
 export async function overwriteScrap(filePath: string, body: string): Promise<void> {
   const existing = await Bun.file(filePath).text();
 
-  // frontmatter を抽出して保持
   const frontmatterMatch = existing.match(/^---\n[\s\S]*?\n---/);
   if (!frontmatterMatch) {
     console.error(`⚠️ frontmatter が見つかりません: ${filePath}`);

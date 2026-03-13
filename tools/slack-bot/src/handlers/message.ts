@@ -1,7 +1,7 @@
 import type { GenericMessageEvent, MessageChangedEvent } from "@slack/bolt";
 import { downloadFiles } from "../lib/image.js";
 import { slackMrkdwnToMarkdown } from "../lib/markdown.js";
-import { getFilePath, setFilePath } from "../lib/message-map.js";
+import { findScrapBySlackPath } from "../lib/message-map.js";
 import { overwriteScrap, writeNewScrap } from "../lib/scrap-writer.js";
 
 interface SlackFile {
@@ -10,20 +10,18 @@ interface SlackFile {
   url_private?: string;
 }
 
+/** 全メッセージではなく意図的な投稿のみ scrap 対象とするため、ボットへのメンション有無で判定する */
 function hasBotMention(text: string, botUserId: string): boolean {
   return text.includes(`<@${botUserId}>`);
 }
 
+/** メンションタグのみ除去する。空白・改行は一切加工しない（Slack メッセージの原文をそのまま scrap に反映する） */
 function stripBotMention(text: string, botUserId: string): string {
-  return text
-    .replace(new RegExp(`<@${botUserId}>`, "g"), "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return text.replace(new RegExp(`<@${botUserId}>`, "g"), "");
 }
 
-/** Slack メッセージの path 部分を生成する (e.g. /archives/C.../p...) */
+/** ドメインを含まない path のみ返す（frontmatter には slackUrl ではなく slackPath として記録する） */
 function buildMessagePath(channelId: string, ts: string): string {
-  // ts: "1234567890.123456" -> "p1234567890123456"
   const messageId = `p${ts.replace(".", "")}`;
   return `/archives/${channelId}/${messageId}`;
 }
@@ -33,7 +31,10 @@ function tsToImagePrefix(ts: string): string {
   return ts.replace(".", "-");
 }
 
-/** 新規メッセージを処理して scrap ファイルを作成する */
+/**
+ * 新規メッセージを処理して scrap ファイルを作成する。
+ * ボットへのメンションを含むメッセージのみ処理する。
+ */
 export async function handleNewMessage(
   event: GenericMessageEvent,
   botUserId: string,
@@ -65,11 +66,13 @@ export async function handleNewMessage(
 
   const messagePath = buildMessagePath(event.channel, ts);
   const filePath = await writeNewScrap(ts, body, messagePath);
-  await setFilePath(ts, filePath);
   console.log(`✅ scrap 作成: ${filePath}`);
 }
 
-/** メッセージ編集を処理する */
+/**
+ * メッセージ編集を処理する。
+ * 既存 scrap があれば上書き、ファイルが削除されていた場合やメンション後付けの場合は新規作成する。
+ */
 export async function handleEditMessage(
   event: MessageChangedEvent,
   botUserId: string,
@@ -84,10 +87,11 @@ export async function handleEditMessage(
   // メンションを除去
   const cleanText = stripBotMention(text, botUserId);
 
-  const existingPath = await getFilePath(ts);
+  // frontmatter の slackPath から既存ファイルを検索（外部状態ファイルではなく実ファイルを正とする）
+  const messagePath = buildMessagePath(event.channel, ts);
+  const existingPath = await findScrapBySlackPath(messagePath);
 
   if (existingPath) {
-    // 既存の scrap を更新
     const body = slackMrkdwnToMarkdown(cleanText);
     if (!body) {
       console.log(`⏭️ 空の編集をスキップ: ts=${ts}`);
@@ -95,27 +99,26 @@ export async function handleEditMessage(
     }
     await overwriteScrap(existingPath, body);
     console.log(`✏️ scrap 更新: ${existingPath}`);
-  } else {
-    // メンションが後から追加された場合: 新規作成
-    let body = slackMrkdwnToMarkdown(cleanText);
-
-    const files = (message as GenericMessageEvent & { files?: SlackFile[] }).files ?? [];
-    if (files.length > 0) {
-      const downloaded = await downloadFiles(files, tsToImagePrefix(ts));
-      const imageRefs = downloaded.map((d) => d.markdownRef).join("\n");
-      if (imageRefs) {
-        body = body ? `${body}\n\n${imageRefs}` : imageRefs;
-      }
-    }
-
-    if (!body) {
-      console.log(`⏭️ 空のメッセージをスキップ: ts=${ts}`);
-      return;
-    }
-
-    const messagePath = buildMessagePath(event.channel, ts);
-    const filePath = await writeNewScrap(ts, body, messagePath);
-    await setFilePath(ts, filePath);
-    console.log(`✅ scrap 作成 (編集でメンション追加): ${filePath}`);
+    return;
   }
+
+  // 新規作成（メンション後付け）
+  let body = slackMrkdwnToMarkdown(cleanText);
+
+  const files = (message as GenericMessageEvent & { files?: SlackFile[] }).files ?? [];
+  if (files.length > 0) {
+    const downloaded = await downloadFiles(files, tsToImagePrefix(ts));
+    const imageRefs = downloaded.map((d) => d.markdownRef).join("\n");
+    if (imageRefs) {
+      body = body ? `${body}\n\n${imageRefs}` : imageRefs;
+    }
+  }
+
+  if (!body) {
+    console.log(`⏭️ 空のメッセージをスキップ: ts=${ts}`);
+    return;
+  }
+
+  const filePath = await writeNewScrap(ts, body, messagePath);
+  console.log(`✅ scrap 作成 (編集でメンション追加): ${filePath}`);
 }
