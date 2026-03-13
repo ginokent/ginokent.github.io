@@ -10,7 +10,7 @@ export async function gitCommitPush(filePath: string): Promise<void> {
 
   try {
     await run("git", ["add", filePath]);
-    await run("git", ["commit", "-m", message]);
+    await run("git", ["commit", "--only", filePath, "-m", message]);
     await run("git", ["push"]);
     console.log(`📤 git push 完了: ${filename}`);
   } catch (e) {
