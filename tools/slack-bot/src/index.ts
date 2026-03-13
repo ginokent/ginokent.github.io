@@ -8,21 +8,31 @@ const app = new App({
   socketMode: true,
 });
 
+// 全受信イベントをログ出力
+app.use(async ({ body, next }) => {
+  const type = body.event?.type ?? body.type ?? "unknown";
+  const subtype = body.event?.subtype ? ` (${body.event.subtype})` : "";
+  const channel = body.event?.channel ?? "";
+  console.log(`📥 イベント受信: type=${type}${subtype} channel=${channel}`);
+  await next();
+});
+
+let botUserId: string;
+
 // 全 message イベントをリッスン (subtype 付きも含む)
 app.event("message", async ({ event }) => {
   // 対象チャンネル以外は無視
   if (event.channel !== config.slackChannelId) return;
 
   if (!("subtype" in event) || event.subtype === undefined) {
-    // 通常の新規メッセージ
     // bot メッセージを除外
     if ("bot_id" in event && event.bot_id) return;
-    await handleNewMessage(event);
+    await handleNewMessage(event, botUserId);
     return;
   }
 
   if (event.subtype === "message_changed") {
-    await handleEditMessage(event);
+    await handleEditMessage(event, botUserId);
     return;
   }
 
@@ -30,6 +40,8 @@ app.event("message", async ({ event }) => {
 });
 
 (async () => {
+  const authResult = await app.client.auth.test();
+  botUserId = authResult.user_id!;
   await app.start();
-  console.log(`🤖 Slack bot 起動 (チャンネル: ${config.slackChannelId})`);
+  console.log(`🤖 Slack bot 起動 (チャンネル: ${config.slackChannelId}, bot: <@${botUserId}>)`);
 })();

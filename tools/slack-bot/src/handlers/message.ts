@@ -3,7 +3,6 @@ import { downloadFiles } from "../lib/image.js";
 import { slackMrkdwnToMarkdown } from "../lib/markdown.js";
 import { getFilePath, setFilePath } from "../lib/message-map.js";
 import { overwriteScrap, writeNewScrap } from "../lib/scrap-writer.js";
-import { generateSlug } from "../lib/slug.js";
 
 interface SlackFile {
   name?: string;
@@ -11,18 +10,48 @@ interface SlackFile {
   url_private?: string;
 }
 
+function hasBotMention(text: string, botUserId: string): boolean {
+  return text.includes(`<@${botUserId}>`);
+}
+
+function stripBotMention(text: string, botUserId: string): string {
+  return text
+    .replace(new RegExp(`<@${botUserId}>`, "g"), "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Slack メッセージの path 部分を生成する (e.g. /archives/C.../p...) */
+function buildMessagePath(channelId: string, ts: string): string {
+  // ts: "1234567890.123456" -> "p1234567890123456"
+  const messageId = `p${ts.replace(".", "")}`;
+  return `/archives/${channelId}/${messageId}`;
+}
+
+/** ts から画像ファイル用のプレフィックスを生成する */
+function tsToImagePrefix(ts: string): string {
+  return ts.replace(".", "-");
+}
+
 /** 新規メッセージを処理して scrap ファイルを作成する */
-export async function handleNewMessage(event: GenericMessageEvent): Promise<void> {
+export async function handleNewMessage(
+  event: GenericMessageEvent,
+  botUserId: string,
+): Promise<void> {
   const text = event.text ?? "";
   const ts = event.ts;
   const files = (event as GenericMessageEvent & { files?: SlackFile[] }).files ?? [];
 
-  const slug = generateSlug(text, ts);
-  let body = slackMrkdwnToMarkdown(text);
+  // メンションがない場合は無視
+  if (!hasBotMention(text, botUserId)) return;
+
+  // メンションを除去してから処理
+  const cleanText = stripBotMention(text, botUserId);
+  let body = slackMrkdwnToMarkdown(cleanText);
 
   // 添付画像をダウンロードして Markdown に追加
   if (files.length > 0) {
-    const downloaded = await downloadFiles(files, slug);
+    const downloaded = await downloadFiles(files, tsToImagePrefix(ts));
     const imageRefs = downloaded.map((d) => d.markdownRef).join("\n");
     if (imageRefs) {
       body = body ? `${body}\n\n${imageRefs}` : imageRefs;
@@ -34,29 +63,59 @@ export async function handleNewMessage(event: GenericMessageEvent): Promise<void
     return;
   }
 
-  const filePath = await writeNewScrap(slug, ts, body);
+  const messagePath = buildMessagePath(event.channel, ts);
+  const filePath = await writeNewScrap(ts, body, messagePath);
   await setFilePath(ts, filePath);
   console.log(`✅ scrap 作成: ${filePath}`);
 }
 
-/** メッセージ編集を処理して既存 scrap ファイルを上書きする */
-export async function handleEditMessage(event: MessageChangedEvent): Promise<void> {
+/** メッセージ編集を処理する */
+export async function handleEditMessage(
+  event: MessageChangedEvent,
+  botUserId: string,
+): Promise<void> {
   const message = event.message as GenericMessageEvent;
   const ts = message.ts;
   const text = message.text ?? "";
 
-  const filePath = await getFilePath(ts);
-  if (!filePath) {
-    console.log(`⏭️ マッピングなし、編集をスキップ: ts=${ts}`);
-    return;
-  }
+  // メンションがない場合は無視
+  if (!hasBotMention(text, botUserId)) return;
 
-  const body = slackMrkdwnToMarkdown(text);
-  if (!body) {
-    console.log(`⏭️ 空の編集をスキップ: ts=${ts}`);
-    return;
-  }
+  // メンションを除去
+  const cleanText = stripBotMention(text, botUserId);
 
-  await overwriteScrap(filePath, body);
-  console.log(`✏️ scrap 更新: ${filePath}`);
+  const existingPath = await getFilePath(ts);
+
+  if (existingPath) {
+    // 既存の scrap を更新
+    const body = slackMrkdwnToMarkdown(cleanText);
+    if (!body) {
+      console.log(`⏭️ 空の編集をスキップ: ts=${ts}`);
+      return;
+    }
+    await overwriteScrap(existingPath, body);
+    console.log(`✏️ scrap 更新: ${existingPath}`);
+  } else {
+    // メンションが後から追加された場合: 新規作成
+    let body = slackMrkdwnToMarkdown(cleanText);
+
+    const files = (message as GenericMessageEvent & { files?: SlackFile[] }).files ?? [];
+    if (files.length > 0) {
+      const downloaded = await downloadFiles(files, tsToImagePrefix(ts));
+      const imageRefs = downloaded.map((d) => d.markdownRef).join("\n");
+      if (imageRefs) {
+        body = body ? `${body}\n\n${imageRefs}` : imageRefs;
+      }
+    }
+
+    if (!body) {
+      console.log(`⏭️ 空のメッセージをスキップ: ts=${ts}`);
+      return;
+    }
+
+    const messagePath = buildMessagePath(event.channel, ts);
+    const filePath = await writeNewScrap(ts, body, messagePath);
+    await setFilePath(ts, filePath);
+    console.log(`✅ scrap 作成 (編集でメンション追加): ${filePath}`);
+  }
 }
