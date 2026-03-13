@@ -2,6 +2,7 @@ import type { GenericMessageEvent, MessageChangedEvent } from "@slack/bolt";
 import { downloadFiles } from "../lib/image.js";
 import { slackMrkdwnToMarkdown } from "../lib/markdown.js";
 import { findScrapBySlackPath } from "../lib/message-map.js";
+import { gitCommitPush } from "../lib/git.js";
 import { overwriteScrap, writeNewScrap } from "../lib/scrap-writer.js";
 
 interface SlackFile {
@@ -67,6 +68,7 @@ export async function handleNewMessage(
   const messagePath = buildMessagePath(event.channel, ts);
   const filePath = await writeNewScrap(ts, body, messagePath);
   console.log(`✅ scrap 作成: ${filePath}`);
+  await gitCommitPush(filePath);
 }
 
 /**
@@ -99,6 +101,7 @@ export async function handleEditMessage(
     }
     await overwriteScrap(existingPath, body);
     console.log(`✏️ scrap 更新: ${existingPath}`);
+    await gitCommitPush(existingPath);
     return;
   }
 
@@ -121,4 +124,5 @@ export async function handleEditMessage(
 
   const filePath = await writeNewScrap(ts, body, messagePath);
   console.log(`✅ scrap 作成 (編集でメンション追加): ${filePath}`);
+  await gitCommitPush(filePath);
 }
