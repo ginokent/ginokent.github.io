@@ -1,6 +1,5 @@
 ---
 publishedAt: 2026-01-22T09:00:00+09:00
-tags: ["design"]
 ---
 
 On Design Principles

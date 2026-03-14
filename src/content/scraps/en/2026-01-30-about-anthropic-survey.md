@@ -1,6 +1,5 @@
 ---
 publishedAt: 2026-01-30T09:00:00+09:00
-tags: ["thoughts"]
 ---
 
 Thoughts on 'Anthropic Survey Confirms Signs of Disempowerment Among Claude Users'

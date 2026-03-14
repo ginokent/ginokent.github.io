@@ -1,6 +1,5 @@
 ---
 publishedAt: 2026-03-05T10:00:00+09:00
-tags: ["thoughts"]
 ---
 
 I recently realized that I hate living under other people's rules  

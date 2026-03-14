@@ -1,6 +1,5 @@
 ---
 publishedAt: 2026-02-28T09:00:00+09:00
-tags: ["thoughts"]
 ---
 
 Gemini Can Now Create SVG Animations This Good?
