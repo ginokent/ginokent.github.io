@@ -30,8 +30,10 @@ function formatFilePrefix(date: Date): string {
 }
 
 function buildFrontmatter(publishedAt: string, tags: string[], slackPath?: string): string {
-  const tagsStr = JSON.stringify(tags);
-  let fm = `---\npublishedAt: ${publishedAt}\ntags: ${tagsStr}`;
+  let fm = `---\npublishedAt: ${publishedAt}`;
+  if (tags.length > 0) {
+    fm += `\ntags: ${JSON.stringify(tags)}`;
+  }
   if (slackPath) {
     fm += `\nslackPath: ${slackPath}`;
   }

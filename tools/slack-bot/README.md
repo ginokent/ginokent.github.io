@@ -65,7 +65,7 @@
 SLACK_BOT_TOKEN=xoxb-xxxx-xxxx-xxxx   # Bot User OAuth Token
 SLACK_APP_TOKEN=xapp-x-xxxx-xxxx      # App-Level Token (Socket Mode 用)
 SLACK_CHANNEL_ID=C0XXXXXXXXX          # 監視対象チャンネルの ID
-DEFAULT_TAGS=slack                     # scrap に付与するデフォルトタグ (カンマ区切りで複数指定可)
+#DEFAULT_TAGS=slack                   # (任意) scrap に付与するデフォルトタグ (カンマ区切りで複数指定可、未設定時はタグなし)
 ```
 
 ### SLACK_CHANNEL_ID の取得方法
