@@ -1,8 +1,10 @@
 import type { GenericMessageEvent, MessageChangedEvent } from "@slack/bolt";
+import type { WebClient } from "@slack/web-api";
 import { downloadFiles } from "../lib/image.js";
 import { slackMrkdwnToMarkdown } from "../lib/markdown.js";
 import { findScrapBySlackPath } from "../lib/message-map.js";
 import { gitCommitPush } from "../lib/git.js";
+import { addReaction, removeReaction } from "../lib/reaction.js";
 import { overwriteScrap, writeNewScrap } from "../lib/scrap-writer.js";
 
 interface SlackFile {
@@ -37,15 +39,21 @@ function tsToImagePrefix(ts: string): string {
  * ボットへのメンションを含むメッセージのみ処理する。
  */
 export async function handleNewMessage(
+  client: WebClient,
   event: GenericMessageEvent,
   botUserId: string,
 ): Promise<void> {
   const text = event.text ?? "";
   const ts = event.ts;
+  const channel = event.channel;
   const files = (event as GenericMessageEvent & { files?: SlackFile[] }).files ?? [];
 
   // メンションがない場合は無視
   if (!hasBotMention(text, botUserId)) return;
+
+  // 処理開始リアクション
+  await removeReaction(client, channel, ts, "white_check_mark");
+  await addReaction(client, channel, ts, "runner");
 
   // メンションを除去してから処理
   const cleanText = stripBotMention(text, botUserId);
@@ -62,13 +70,18 @@ export async function handleNewMessage(
 
   if (!body) {
     console.log(`⏭️ 空のメッセージをスキップ: ts=${ts}`);
+    await removeReaction(client, channel, ts, "runner");
     return;
   }
 
-  const messagePath = buildMessagePath(event.channel, ts);
+  const messagePath = buildMessagePath(channel, ts);
   const filePath = await writeNewScrap(ts, body, messagePath);
   console.log(`✅ scrap 作成: ${filePath}`);
   await gitCommitPush(filePath);
+
+  // 処理完了リアクション
+  await removeReaction(client, channel, ts, "runner");
+  await addReaction(client, channel, ts, "white_check_mark");
 }
 
 /**
@@ -76,32 +89,43 @@ export async function handleNewMessage(
  * 既存 scrap があれば上書き、ファイルが削除されていた場合やメンション後付けの場合は新規作成する。
  */
 export async function handleEditMessage(
+  client: WebClient,
   event: MessageChangedEvent,
   botUserId: string,
 ): Promise<void> {
   const message = event.message as GenericMessageEvent;
   const ts = message.ts;
+  const channel = event.channel;
   const text = message.text ?? "";
 
   // メンションがない場合は無視
   if (!hasBotMention(text, botUserId)) return;
 
+  // 処理開始リアクション
+  await removeReaction(client, channel, ts, "white_check_mark");
+  await addReaction(client, channel, ts, "runner");
+
   // メンションを除去
   const cleanText = stripBotMention(text, botUserId);
 
   // frontmatter の slackPath から既存ファイルを検索（外部状態ファイルではなく実ファイルを正とする）
-  const messagePath = buildMessagePath(event.channel, ts);
+  const messagePath = buildMessagePath(channel, ts);
   const existingPath = await findScrapBySlackPath(messagePath);
 
   if (existingPath) {
     const body = slackMrkdwnToMarkdown(cleanText);
     if (!body) {
       console.log(`⏭️ 空の編集をスキップ: ts=${ts}`);
+      await removeReaction(client, channel, ts, "runner");
       return;
     }
     await overwriteScrap(existingPath, body);
     console.log(`✏️ scrap 更新: ${existingPath}`);
     await gitCommitPush(existingPath);
+
+    // 処理完了リアクション
+    await removeReaction(client, channel, ts, "runner");
+    await addReaction(client, channel, ts, "white_check_mark");
     return;
   }
 
@@ -119,10 +143,15 @@ export async function handleEditMessage(
 
   if (!body) {
     console.log(`⏭️ 空のメッセージをスキップ: ts=${ts}`);
+    await removeReaction(client, channel, ts, "runner");
     return;
   }
 
   const filePath = await writeNewScrap(ts, body, messagePath);
   console.log(`✅ scrap 作成 (編集でメンション追加): ${filePath}`);
   await gitCommitPush(filePath);
+
+  // 処理完了リアクション
+  await removeReaction(client, channel, ts, "runner");
+  await addReaction(client, channel, ts, "white_check_mark");
 }

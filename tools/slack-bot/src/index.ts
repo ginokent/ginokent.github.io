@@ -27,12 +27,12 @@ app.event("message", async ({ event }) => {
   if (!("subtype" in event) || event.subtype === undefined) {
     // bot メッセージを除外
     if ("bot_id" in event && event.bot_id) return;
-    await handleNewMessage(event, botUserId);
+    await handleNewMessage(app.client, event, botUserId);
     return;
   }
 
   if (event.subtype === "message_changed") {
-    await handleEditMessage(event, botUserId);
+    await handleEditMessage(app.client, event, botUserId);
     return;
   }
 

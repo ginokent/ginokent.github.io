@@ -49,6 +49,7 @@
    - **`channels:history`** — パブリックチャンネルのメッセージを読み取る
    - **`groups:history`** — プライベートチャンネルのメッセージを読み取る（プライベートチャンネルを使う場合）
    - **`files:read`** — 添付ファイル（画像）をダウンロードする
+   - **`reactions:write`** — メッセージにリアクション（処理中 🏃 / 完了 ✅）を付与・削除する
 
 ### 5. ワークスペースへのインストール
 
@@ -115,7 +116,7 @@ bun dev
 - [ ] **環境変数は正しく設定されているか** — `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, `SLACK_CHANNEL_ID` がすべて設定されていること
 - [ ] **Socket Mode が有効か** — Slack App 設定の **Socket Mode** がオンになっていること
 - [ ] **Event Subscriptions が有効か** — **Enable Events** がオンで、**`message.channels`**（パブリック）または **`message.groups`**（プライベート）が bot event に追加されていること
-- [ ] **Bot Token Scopes は十分か** — `channels:history` と `files:read` が付与されていること
+- [ ] **Bot Token Scopes は十分か** — `channels:history`, `files:read`, `reactions:write` が付与されていること
 - [ ] **ボットがチャンネルに参加しているか** — `/invite @<ボット名>` でチャンネルに招待済みであること
 - [ ] **SLACK_CHANNEL_ID は正しいか** — チャンネル詳細から取得した ID と一致していること
 - [ ] **ボットが起動しているか** — ターミナルに `Slack bot 起動` のログが出力されていること
