@@ -12,6 +12,7 @@ interface SlackFile {
 
 interface DownloadedImage {
   markdownRef: string;
+  absolutePath?: string;
 }
 
 function getExtension(filename: string): string {
@@ -28,6 +29,7 @@ export async function downloadFiles(
   slug: string,
 ): Promise<DownloadedImage[]> {
   const results: DownloadedImage[] = [];
+  let imageIndex = 0;
 
   for (const file of files) {
     const name = file.name ?? "unknown";
@@ -38,7 +40,8 @@ export async function downloadFiles(
       continue;
     }
 
-    const savedName = `${slug}_${name}`;
+    imageIndex++;
+    const savedName = `${slug}-${imageIndex}.${ext}`;
     const relativePath = `/images/scraps/${savedName}`;
     const absolutePath = join(config.projectRoot, "public", "images", "scraps", savedName);
 
@@ -57,7 +60,7 @@ export async function downloadFiles(
     await Bun.write(absolutePath, await response.arrayBuffer());
     console.log(`📷 画像保存: ${absolutePath}`);
 
-    results.push({ markdownRef: `![${name}](${relativePath})` });
+    results.push({ markdownRef: `![${name}](${relativePath})`, absolutePath });
   }
 
   return results;

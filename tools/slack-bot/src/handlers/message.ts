@@ -5,7 +5,7 @@ import { slackMrkdwnToMarkdown } from "../lib/markdown.js";
 import { findScrapBySlackPath } from "../lib/message-map.js";
 import { gitCommitPush } from "../lib/git.js";
 import { addReaction, removeReaction } from "../lib/reaction.js";
-import { overwriteScrap, writeNewScrap } from "../lib/scrap-writer.js";
+import { overwriteScrap, resolveScrapBaseName, writeNewScrap } from "../lib/scrap-writer.js";
 
 interface SlackFile {
   name?: string;
@@ -27,11 +27,6 @@ function stripBotMention(text: string, botUserId: string): string {
 function buildMessagePath(channelId: string, ts: string): string {
   const messageId = `p${ts.replace(".", "")}`;
   return `/archives/${channelId}/${messageId}`;
-}
-
-/** ts から画像ファイル用のプレフィックスを生成する */
-function tsToImagePrefix(ts: string): string {
-  return ts.replace(".", "-");
 }
 
 /**
@@ -59,9 +54,14 @@ export async function handleNewMessage(
   const cleanText = stripBotMention(text, botUserId);
   let body = slackMrkdwnToMarkdown(cleanText);
 
+  // scrap ベース名を事前に計算（画像命名に使用）
+  const scrapBaseName = await resolveScrapBaseName(ts);
+
   // 添付画像をダウンロードして Markdown に追加
+  let imagePaths: string[] = [];
   if (files.length > 0) {
-    const downloaded = await downloadFiles(files, tsToImagePrefix(ts));
+    const downloaded = await downloadFiles(files, scrapBaseName);
+    imagePaths = downloaded.filter((d) => d.absolutePath).map((d) => d.absolutePath!);
     const imageRefs = downloaded.map((d) => d.markdownRef).join("\n");
     if (imageRefs) {
       body = body ? `${body}\n\n${imageRefs}` : imageRefs;
@@ -75,9 +75,9 @@ export async function handleNewMessage(
   }
 
   const messagePath = buildMessagePath(channel, ts);
-  const filePath = await writeNewScrap(ts, body, messagePath);
+  const filePath = await writeNewScrap(scrapBaseName, ts, body, messagePath);
   console.log(`✅ scrap 作成: ${filePath}`);
-  await gitCommitPush(filePath);
+  await gitCommitPush(filePath, ...imagePaths);
 
   // 処理完了リアクション
   await removeReaction(client, channel, ts, "runner");
@@ -132,9 +132,12 @@ export async function handleEditMessage(
   // 新規作成（メンション後付け）
   let body = slackMrkdwnToMarkdown(cleanText);
 
+  const scrapBaseName = await resolveScrapBaseName(ts);
   const files = (message as GenericMessageEvent & { files?: SlackFile[] }).files ?? [];
+  let imagePaths: string[] = [];
   if (files.length > 0) {
-    const downloaded = await downloadFiles(files, tsToImagePrefix(ts));
+    const downloaded = await downloadFiles(files, scrapBaseName);
+    imagePaths = downloaded.filter((d) => d.absolutePath).map((d) => d.absolutePath!);
     const imageRefs = downloaded.map((d) => d.markdownRef).join("\n");
     if (imageRefs) {
       body = body ? `${body}\n\n${imageRefs}` : imageRefs;
@@ -147,9 +150,9 @@ export async function handleEditMessage(
     return;
   }
 
-  const filePath = await writeNewScrap(ts, body, messagePath);
+  const filePath = await writeNewScrap(scrapBaseName, ts, body, messagePath);
   console.log(`✅ scrap 作成 (編集でメンション追加): ${filePath}`);
-  await gitCommitPush(filePath);
+  await gitCommitPush(filePath, ...imagePaths);
 
   // 処理完了リアクション
   await removeReaction(client, channel, ts, "runner");

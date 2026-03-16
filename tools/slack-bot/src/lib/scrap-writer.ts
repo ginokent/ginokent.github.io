@@ -41,30 +41,35 @@ function buildFrontmatter(publishedAt: string, tags: string[], slackPath?: strin
   return fm;
 }
 
-/**
- * 新規 scrap ファイルを作成する。
- * 同名ファイルが存在する場合は連番を付与する。
- * @returns 作成されたファイルの絶対パス
- */
-export async function writeNewScrap(ts: string, body: string, slackPath?: string): Promise<string> {
+/** scrap ファイルのベース名（拡張子なし）を衝突チェック付きで返す */
+export async function resolveScrapBaseName(ts: string): Promise<string> {
   const date = tsToJSTDate(ts);
-  const publishedAt = formatISO8601JST(date);
   const filePrefix = formatFilePrefix(date);
-  const frontmatter = buildFrontmatter(publishedAt, config.defaultTags, slackPath);
-  const content = `${frontmatter}\n\n${body}\n`;
-
   const scrapsDir = join(config.projectRoot, "src", "content", "scraps");
-  let filename = `${filePrefix}-scrap.md`;
-  let filePath = join(scrapsDir, filename);
 
-  // 同名ファイルが存在する場合は連番を付与
+  let baseName = `${filePrefix}-scrap`;
+  let filePath = join(scrapsDir, `${baseName}.md`);
+
   let counter = 1;
   while (await Bun.file(filePath).exists()) {
     counter++;
-    filename = `${filePrefix}-scrap-${counter}.md`;
-    filePath = join(scrapsDir, filename);
+    baseName = `${filePrefix}-scrap-${counter}`;
+    filePath = join(scrapsDir, `${baseName}.md`);
   }
+  return baseName;
+}
 
+/**
+ * 新規 scrap ファイルを作成する。
+ * @param baseName resolveScrapBaseName で決定したベース名
+ * @returns 作成されたファイルの絶対パス
+ */
+export async function writeNewScrap(baseName: string, ts: string, body: string, slackPath?: string): Promise<string> {
+  const date = tsToJSTDate(ts);
+  const publishedAt = formatISO8601JST(date);
+  const frontmatter = buildFrontmatter(publishedAt, config.defaultTags, slackPath);
+  const content = `${frontmatter}\n\n${body}\n`;
+  const filePath = join(config.projectRoot, "src", "content", "scraps", `${baseName}.md`);
   await Bun.write(filePath, content);
   return filePath;
 }

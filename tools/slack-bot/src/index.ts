@@ -1,4 +1,5 @@
 import { App } from "@slack/bolt";
+import type { GenericMessageEvent } from "@slack/bolt";
 import { config } from "./config.js";
 import { handleEditMessage, handleNewMessage } from "./handlers/message.js";
 
@@ -28,6 +29,12 @@ app.event("message", async ({ event }) => {
     // bot メッセージを除外
     if ("bot_id" in event && event.bot_id) return;
     await handleNewMessage(app.client, event, botUserId);
+    return;
+  }
+
+  if (event.subtype === "file_share") {
+    if ("bot_id" in event && event.bot_id) return;
+    await handleNewMessage(app.client, event as unknown as GenericMessageEvent, botUserId);
     return;
   }
 
