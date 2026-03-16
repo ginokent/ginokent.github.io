@@ -1,7 +1,7 @@
 ---
 import { getCollection } from 'astro:content';
 import BaseLayout from '../../../layouts/BaseLayout.astro';
-import { locales, type Locale, translations, formatDate, localePath, getLocaleFromSlug } from '../../../lib/i18n';
+import { locales, type Locale, translations, formatDateTime, localePath, getLocaleFromSlug } from '../../../lib/i18n';
 import { getScrapSeoTitle } from '../../../lib/scrap';
 
 export async function getStaticPaths() {
@@ -51,7 +51,7 @@ const t = translations[lang];
     <header class="scrap-article-header">
       <div class="scrap-article-meta">
         <time datetime={scrap.data.publishedAt.toISOString()}>
-          {formatDate(scrap.data.publishedAt, lang)}
+          {formatDateTime(scrap.data.publishedAt, lang)}
         </time>
       </div>
     </header>

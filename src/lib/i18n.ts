@@ -64,6 +64,42 @@ export function formatDateShort(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+// 短い日時フォーマット（scrap 一覧用）
+// 例: "2026-03-16 13:43"
+export function formatDateTimeShort(date: Date): string {
+  return date.toLocaleString('sv-SE', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).replace(',', '');
+}
+
+// 日時フォーマット（scrap 詳細用）
+// ja: "2026年3月16日 13:43"  en: "March 16, 2026 13:43"
+export function formatDateTime(date: Date, locale: Locale): string {
+  if (locale === 'ja') {
+    return date.toLocaleString('ja-JP', {
+      timeZone: 'Asia/Tokyo',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  return date.toLocaleString('en-US', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 // slug から言語を抽出
 // 日本語: posts/xxx.md -> slug = "xxx"
 // 英語: posts/en/xxx.md -> slug = "en/xxx"

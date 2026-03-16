@@ -1,7 +1,7 @@
 ---
 import { getCollection } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { locales, type Locale, translations, formatDateShort, localePath, getLocaleFromSlug } from '../../lib/i18n';
+import { locales, type Locale, translations, formatDateTimeShort, localePath, getLocaleFromSlug } from '../../lib/i18n';
 
 function getScrapPermalink(slug: string, lang: Locale): string {
   const { slugWithoutLocale } = getLocaleFromSlug(slug);
@@ -36,7 +36,7 @@ const scraps = (await getCollection('scraps', ({ data, slug }) => {
           <header class="scrap-header">
             <a href={getScrapPermalink(scrap.slug, lang)} class="scrap-date-link">
               <time class="scrap-date" datetime={scrap.data.publishedAt.toISOString()}>
-                {formatDateShort(scrap.data.publishedAt)}
+                {formatDateTimeShort(scrap.data.publishedAt)}
               </time>
             </a>
           </header>
