@@ -10,6 +10,7 @@
 - メッセージの編集を検知して既存の scrap ファイルを更新（frontmatter は保持）
 - 添付画像を `public/images/scraps/` にダウンロードし、Markdown の画像参照を挿入
 - Slack mrkdwn 記法を標準 Markdown に自動変換（太字、斜体、取り消し線、リンクなど）
+- scrap 作成・更新後にトリガーメッセージのスレッドへ scrap URL を返信（`SITE_URL` 設定時のみ）
 
 ## 前提条件
 
@@ -50,6 +51,7 @@
    - **`groups:history`** — プライベートチャンネルのメッセージを読み取る（プライベートチャンネルを使う場合）
    - **`files:read`** — 添付ファイル（画像）をダウンロードする
    - **`reactions:write`** — メッセージにリアクション（処理中 🏃 / 完了 ✅）を付与・削除する
+   - **`chat:write`** — scrap 作成・更新後にスレッドへ URL を返信する
 
 ### 5. ワークスペースへのインストール
 
@@ -66,6 +68,8 @@ SLACK_BOT_TOKEN=xoxb-xxxx-xxxx-xxxx   # Bot User OAuth Token
 SLACK_APP_TOKEN=xapp-x-xxxx-xxxx      # App-Level Token (Socket Mode 用)
 SLACK_CHANNEL_ID=C0XXXXXXXXX          # 監視対象チャンネルの ID
 #DEFAULT_TAGS=slack                   # (任意) scrap に付与するデフォルトタグ (カンマ区切りで複数指定可、未設定時はタグなし)
+#GIT_AUTO_COMMIT_PUSH=false           # (任意) scrap 作成時に git commit push までおこなうかどうか (未設定時は git commit push をスキップ)
+#SITE_URL=https://ginokent.github.io  # (任意) scrap 作成・更新後にスレッドへ URL を返信する (未設定時はスレッド返信をスキップ)
 ```
 
 ### SLACK_CHANNEL_ID の取得方法
@@ -116,7 +120,7 @@ bun dev
 - [ ] **環境変数は正しく設定されているか** — `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, `SLACK_CHANNEL_ID` がすべて設定されていること
 - [ ] **Socket Mode が有効か** — Slack App 設定の **Socket Mode** がオンになっていること
 - [ ] **Event Subscriptions が有効か** — **Enable Events** がオンで、**`message.channels`**（パブリック）または **`message.groups`**（プライベート）が bot event に追加されていること
-- [ ] **Bot Token Scopes は十分か** — `channels:history`, `files:read`, `reactions:write` が付与されていること
+- [ ] **Bot Token Scopes は十分か** — `channels:history`, `files:read`, `reactions:write`, `chat:write` が付与されていること
 - [ ] **ボットがチャンネルに参加しているか** — `/invite @<ボット名>` でチャンネルに招待済みであること
 - [ ] **SLACK_CHANNEL_ID は正しいか** — チャンネル詳細から取得した ID と一致していること
 - [ ] **ボットが起動しているか** — ターミナルに `Slack bot 起動` のログが出力されていること

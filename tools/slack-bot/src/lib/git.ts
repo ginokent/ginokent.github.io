@@ -2,12 +2,12 @@ import { basename } from "node:path";
 import { config } from "../config.js";
 
 /** scrap ファイル（と画像）を git add, commit, push する。GIT_AUTO_COMMIT_PUSH=true の場合のみ実行する。 */
-export async function gitCommitPush(...filePaths: string[]): Promise<void> {
+export async function gitCommitPush(action: "add" | "update", ...filePaths: string[]): Promise<void> {
   if (!config.gitAutoCommitPush) return;
   if (filePaths.length === 0) return;
 
   const filename = basename(filePaths[0]);
-  const message = `docs(scraps): add ${filename}`;
+  const message = `docs(scraps): ${action} ${filename}`;
 
   try {
     await run("git", ["add", ...filePaths]);

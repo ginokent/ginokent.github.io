@@ -15,6 +15,7 @@ export const config = {
   slackChannelId: requireEnv("SLACK_CHANNEL_ID"),
   defaultTags: process.env.DEFAULT_TAGS ? process.env.DEFAULT_TAGS.split(",").map((t) => t.trim()).filter(Boolean) : [],
   gitAutoCommitPush: process.env.GIT_AUTO_COMMIT_PUSH === "true",
+  siteUrl: process.env.SITE_URL ?? "",
   // tools/slack-bot/src/ から 3 階層上 = プロジェクトルート
   projectRoot: resolve(import.meta.dir, "../../../"),
 } as const;

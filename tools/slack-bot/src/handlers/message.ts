@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import type { GenericMessageEvent, MessageChangedEvent } from "@slack/bolt";
 import type { WebClient } from "@slack/web-api";
 import { downloadFiles } from "../lib/image.js";
@@ -5,6 +6,7 @@ import { slackMrkdwnToMarkdown } from "../lib/markdown.js";
 import { findScrapBySlackPath } from "../lib/message-map.js";
 import { gitCommitPush } from "../lib/git.js";
 import { addReaction, removeReaction } from "../lib/reaction.js";
+import { replyScrapUrl } from "../lib/reply.js";
 import { overwriteScrap, resolveScrapBaseName, writeNewScrap } from "../lib/scrap-writer.js";
 
 interface SlackFile {
@@ -77,7 +79,8 @@ export async function handleNewMessage(
   const messagePath = buildMessagePath(channel, ts);
   const filePath = await writeNewScrap(scrapBaseName, ts, body, messagePath);
   console.log(`✅ scrap 作成: ${filePath}`);
-  await gitCommitPush(filePath, ...imagePaths);
+  await gitCommitPush("add", filePath, ...imagePaths);
+  await replyScrapUrl(client, channel, ts, scrapBaseName);
 
   // 処理完了リアクション
   await removeReaction(client, channel, ts, "runner");
@@ -121,7 +124,9 @@ export async function handleEditMessage(
     }
     await overwriteScrap(existingPath, body);
     console.log(`✏️ scrap 更新: ${existingPath}`);
-    await gitCommitPush(existingPath);
+    await gitCommitPush("update", existingPath);
+    const slug = basename(existingPath, ".md");
+    await replyScrapUrl(client, channel, ts, slug);
 
     // 処理完了リアクション
     await removeReaction(client, channel, ts, "runner");
@@ -152,7 +157,8 @@ export async function handleEditMessage(
 
   const filePath = await writeNewScrap(scrapBaseName, ts, body, messagePath);
   console.log(`✅ scrap 作成 (編集でメンション追加): ${filePath}`);
-  await gitCommitPush(filePath, ...imagePaths);
+  await gitCommitPush("add", filePath, ...imagePaths);
+  await replyScrapUrl(client, channel, ts, scrapBaseName);
 
   // 処理完了リアクション
   await removeReaction(client, channel, ts, "runner");
