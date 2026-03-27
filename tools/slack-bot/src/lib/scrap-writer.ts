@@ -18,7 +18,7 @@ function formatISO8601JST(date: Date): string {
   return `${y}-${m}-${d}T${h}:${min}:${s}+09:00`;
 }
 
-/** ファイル名用の UTC タイムスタンプを生成する（例: 2026-03-13T05-23-35Z） */
+/** ファイル名用の UTC タイムスタンプを生成する（例: 2026-03-13t05-23-35z） */
 function formatFilePrefix(date: Date): string {
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, "0");
@@ -26,7 +26,7 @@ function formatFilePrefix(date: Date): string {
   const h = String(date.getUTCHours()).padStart(2, "0");
   const min = String(date.getUTCMinutes()).padStart(2, "0");
   const s = String(date.getUTCSeconds()).padStart(2, "0");
-  return `${y}-${m}-${d}T${h}-${min}-${s}Z`;
+  return `${y}-${m}-${d}t${h}-${min}-${s}z`;
 }
 
 function buildFrontmatter(publishedAt: string, tags: string[], slackPath?: string): string {

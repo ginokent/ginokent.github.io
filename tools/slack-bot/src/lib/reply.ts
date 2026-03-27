@@ -5,7 +5,7 @@ import { config } from "../config.js";
 export async function replyScrapUrl(client: WebClient, channel: string, ts: string, scrapSlug: string): Promise<void> {
   if (!config.siteUrl) return;
 
-  const url = `${config.siteUrl}/scraps/${scrapSlug}`;
+  const url = `${config.siteUrl}/scraps/${scrapSlug.toLowerCase()}`;
   try {
     await client.chat.postMessage({
       channel,
