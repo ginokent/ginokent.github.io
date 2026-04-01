@@ -1,10 +1,10 @@
 import { basename } from "node:path";
 import { config } from "../config.js";
 
-/** scrap ファイル（と画像）を git add, commit, push する。GIT_AUTO_COMMIT_PUSH=true の場合のみ実行する。 */
-export async function gitCommitPush(action: "add" | "update", ...filePaths: string[]): Promise<void> {
-  if (!config.gitAutoCommitPush) return;
-  if (filePaths.length === 0) return;
+/** scrap ファイル（と画像）を git add, commit, push する。GIT_AUTO_COMMIT_PUSH=true の場合のみ実行する。push 成功時 true を返す。 */
+export async function gitCommitPush(action: "add" | "update", ...filePaths: string[]): Promise<boolean> {
+  if (!config.gitAutoCommitPush) return false;
+  if (filePaths.length === 0) return false;
 
   const filename = basename(filePaths[0]);
   const message = `docs(scraps): ${action} ${filename}`;
@@ -15,14 +15,24 @@ export async function gitCommitPush(action: "add" | "update", ...filePaths: stri
     // staged diff がなければ commit/push をスキップ
     if (await isClean()) {
       console.log(`ℹ️ 差分なし、commit スキップ: ${filename}`);
-      return;
+      return false;
     }
 
     await run("git", ["commit", "--only", ...filePaths, "-m", message]);
-    await run("git", ["push"]);
+
+    try {
+      await run("git", ["push"]);
+    } catch {
+      console.log("🔄 git pull --rebase を試行...");
+      await run("git", ["pull", "--rebase"]);
+      await run("git", ["push"]);
+    }
+
     console.log(`📤 git push 完了: ${filename}`);
+    return true;
   } catch (e) {
     console.error(`⚠️ git 操作失敗:`, e);
+    return false;
   }
 }
 

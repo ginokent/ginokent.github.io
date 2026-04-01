@@ -79,12 +79,14 @@ export async function handleNewMessage(
   const messagePath = buildMessagePath(channel, ts);
   const filePath = await writeNewScrap(scrapBaseName, ts, body, messagePath);
   console.log(`✅ scrap 作成: ${filePath}`);
-  await gitCommitPush("add", filePath, ...imagePaths);
-  await replyScrapUrl(client, channel, ts, scrapBaseName);
+  const pushed = await gitCommitPush("add", filePath, ...imagePaths);
 
-  // 処理完了リアクション
+  // 処理完了リアクション（push 成功時のみ ✅）
   await removeReaction(client, channel, ts, "runner");
-  await addReaction(client, channel, ts, "white_check_mark");
+  if (pushed) {
+    await replyScrapUrl(client, channel, ts, scrapBaseName);
+    await addReaction(client, channel, ts, "white_check_mark");
+  }
 }
 
 /**
@@ -124,13 +126,15 @@ export async function handleEditMessage(
     }
     await overwriteScrap(existingPath, body);
     console.log(`✏️ scrap 更新: ${existingPath}`);
-    await gitCommitPush("update", existingPath);
-    const slug = basename(existingPath, ".md");
-    await replyScrapUrl(client, channel, ts, slug);
+    const pushed = await gitCommitPush("update", existingPath);
 
-    // 処理完了リアクション
+    // 処理完了リアクション（push 成功時のみ ✅）
     await removeReaction(client, channel, ts, "runner");
-    await addReaction(client, channel, ts, "white_check_mark");
+    if (pushed) {
+      const slug = basename(existingPath, ".md");
+      await replyScrapUrl(client, channel, ts, slug);
+      await addReaction(client, channel, ts, "white_check_mark");
+    }
     return;
   }
 
@@ -157,10 +161,12 @@ export async function handleEditMessage(
 
   const filePath = await writeNewScrap(scrapBaseName, ts, body, messagePath);
   console.log(`✅ scrap 作成 (編集でメンション追加): ${filePath}`);
-  await gitCommitPush("add", filePath, ...imagePaths);
-  await replyScrapUrl(client, channel, ts, scrapBaseName);
+  const pushed = await gitCommitPush("add", filePath, ...imagePaths);
 
-  // 処理完了リアクション
+  // 処理完了リアクション（push 成功時のみ ✅）
   await removeReaction(client, channel, ts, "runner");
-  await addReaction(client, channel, ts, "white_check_mark");
+  if (pushed) {
+    await replyScrapUrl(client, channel, ts, scrapBaseName);
+    await addReaction(client, channel, ts, "white_check_mark");
+  }
 }
