@@ -1,6 +1,7 @@
 import rss from '@astrojs/rss';
 import { getCollection } from 'astro:content';
 import type { APIContext } from 'astro';
+import { getLocaleFromSlug, localePath } from '../lib/i18n';
 
 export async function GET(context: APIContext) {
   const posts = (await getCollection('posts', ({ data }) => !data.draft))
@@ -10,12 +11,15 @@ export async function GET(context: APIContext) {
     title: 'ginokent Blog',
     description: 'ginokent Blog RSS Feed',
     site: context.site!,
-    items: posts.map((post) => ({
-      title: post.data.title,
-      pubDate: post.data.publishedAt,
-      description: post.data.description || '',
-      link: `/posts/${post.slug}/`,
-      categories: post.data.tags,
-    })),
+    items: posts.map((post) => {
+      const { locale, slugWithoutLocale } = getLocaleFromSlug(post.slug);
+      return {
+        title: post.data.title,
+        pubDate: post.data.publishedAt,
+        description: post.data.description || '',
+        link: localePath(`/posts/${slugWithoutLocale}/`, locale),
+        categories: post.data.tags,
+      };
+    }),
   });
 }
