@@ -58,6 +58,20 @@ interface RecognizeMessage {
   pixels: Uint8Array;
 }
 
+// Cache API でモデル ArrayBuffer を永続化する。
+// URL は commit/version で pin しているので、URL 一致 = 内容一致が保証される。
+// 同じ URL を再要求した場合は cache から ArrayBuffer を返してネットワーク往復を省略。
+const MODEL_CACHE_NAME = 'ginokent-ocr-models-v1';
+
+async function getCache(): Promise<Cache | null> {
+  if (typeof caches === 'undefined') return null;
+  try {
+    return await caches.open(MODEL_CACHE_NAME);
+  } catch {
+    return null;
+  }
+}
+
 let service: PaddleOcrService | null = null;
 let currentVariant: ModelVariant | null = null;
 let initializing: Promise<PaddleOcrService> | null = null;
@@ -70,10 +84,7 @@ function postStatus(status: string, progress?: number) {
   post({ type: 'status', status, progress: progress ?? null });
 }
 
-async function downloadWithProgress(url: string, label: string): Promise<ArrayBuffer> {
-  postStatus(label, 0);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${label} に失敗 (${res.status}): ${url}`);
+async function readBodyWithProgress(res: Response, label: string): Promise<ArrayBuffer> {
   const total = Number(res.headers.get('content-length')) || 0;
   if (!total || !res.body) {
     return res.arrayBuffer();
@@ -99,6 +110,33 @@ async function downloadWithProgress(url: string, label: string): Promise<ArrayBu
   return merged.buffer;
 }
 
+async function fetchCached(url: string, label: string): Promise<ArrayBuffer> {
+  const cache = await getCache();
+  if (cache) {
+    const hit = await cache.match(url);
+    if (hit && hit.ok) {
+      postStatus(`${label} (キャッシュから読込)`, 1);
+      return hit.arrayBuffer();
+    }
+  }
+  postStatus(label, 0);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${label} に失敗 (${res.status}): ${url}`);
+  // Response の body は一度しか読めないので、進捗読みする前に clone して
+  // キャッシュ用に取り分けておく。
+  const forCache = cache ? res.clone() : null;
+  const buffer = await readBodyWithProgress(res, label);
+  if (cache && forCache) {
+    try {
+      await cache.put(url, forCache);
+    } catch (err) {
+      // Quota 超過などは握り潰す。次回も再ダウンロードになるだけで動作には影響しない。
+      console.warn('Cache API put failed:', err);
+    }
+  }
+  return buffer;
+}
+
 async function ensureService(variant: ModelVariant): Promise<PaddleOcrService> {
   if (service && currentVariant === variant) return service;
   if (initializing && currentVariant === variant) return initializing;
@@ -112,12 +150,10 @@ async function ensureService(variant: ModelVariant): Promise<PaddleOcrService> {
   initializing = (async () => {
     const detLabel = variant === 'server' ? '検出モデル(server)をダウンロード中' : '検出モデルをダウンロード中';
     const recLabel = variant === 'server' ? '認識モデル(server)をダウンロード中' : '認識モデルをダウンロード中';
-    const detBuf = await downloadWithProgress(src.det, detLabel);
-    const recBuf = await downloadWithProgress(src.rec, recLabel);
-    postStatus('辞書をダウンロード中', 0);
-    const dictRes = await fetch(src.dict);
-    if (!dictRes.ok) throw new Error(`辞書のダウンロードに失敗 (${dictRes.status})`);
-    const dict = (await dictRes.text()).split(/\r?\n/);
+    const detBuf = await fetchCached(src.det, detLabel);
+    const recBuf = await fetchCached(src.rec, recLabel);
+    const dictBuf = await fetchCached(src.dict, '辞書をダウンロード中');
+    const dict = new TextDecoder().decode(dictBuf).split(/\r?\n/);
     postStatus('OCR エンジンを初期化中', 0);
     const s = await PaddleOcrService.createInstance({
       // onnxruntime-web の型は paddleocr 側の OrtModule よりも厳密だが
