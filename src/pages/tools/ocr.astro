@@ -12,21 +12,11 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     <header class="page-header">
       <h1 class="page-title">OCR (ローカル処理)</h1>
       <p class="page-description">
-        画像から文字起こしします。プログラム本体（WebAssembly）と言語モデルは初回のみ CDN からダウンロードしますが、
-        OCR 推論はすべてブラウザ内で実行されるため、画像データはどこにもアップロードされません。
+        画像から文字起こしします。OCR エンジン (PaddleOCR PP-OCRv5) と言語モデル・WebAssembly ランタイムは
+        初回のみ CDN からダウンロードしますが、推論はすべてブラウザ内 (Web Worker) で実行され、
+        画像データはどこにもアップロードされません。日本語・英語・中国語が混在していても自動で認識します。
       </p>
     </header>
-
-    <section class="ocr-config">
-      <label class="ocr-config-label">
-        <span>言語</span>
-        <select id="ocr-lang">
-          <option value="jpn" selected>日本語</option>
-          <option value="eng">英語</option>
-          <option value="jpn+eng">日本語 + 英語</option>
-        </select>
-      </label>
-    </section>
 
     <section
       id="ocr-drop"
@@ -70,235 +60,230 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   </article>
 </BaseLayout>
 
-<script is:inline>
-  // Tesseract.js は CDN から動的ロードする。
-  // OCR の推論処理は WebAssembly でブラウザ内完結し、画像はネットワークに送出されない。
-  (function () {
-    const TESSERACT_CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+<script>
+  // OCR ワーカは Vite に ?worker サフィックスで読み込ませる。
+  // 推論はワーカ側で完結し、メインスレッドはこのファイルだけで完結する。
+  import OcrWorker from '../../scripts/ocr-worker.ts?worker';
 
-    const dropEl = document.getElementById('ocr-drop');
-    const fileInput = document.getElementById('ocr-file');
-    const langSel = document.getElementById('ocr-lang');
-    const previewSec = document.getElementById('ocr-preview');
-    const previewImg = document.getElementById('ocr-image');
-    const runBtn = document.getElementById('ocr-run');
-    const clearBtn = document.getElementById('ocr-clear');
-    const progressSec = document.getElementById('ocr-progress');
-    const progressFill = document.getElementById('ocr-progress-fill');
-    const statusEl = document.getElementById('ocr-status');
-    const resultSec = document.getElementById('ocr-result');
-    const resultText = document.getElementById('ocr-text');
-    const resultMeta = document.getElementById('ocr-meta');
-    const copyBtn = document.getElementById('ocr-copy');
-    const errorEl = document.getElementById('ocr-error');
+  type WorkerMessage =
+    | { type: 'status'; status: string; progress: number | null }
+    | { type: 'result'; text: string; confidence: number; lines: number; elapsed: number }
+    | { type: 'error'; message: string };
 
-    let currentBlob = null;
-    let currentObjectUrl = null;
-    let isRunning = false;
-    let tesseractPromise = null;
+  const dropEl = document.getElementById('ocr-drop') as HTMLElement;
+  const fileInput = document.getElementById('ocr-file') as HTMLInputElement;
+  const previewSec = document.getElementById('ocr-preview') as HTMLElement;
+  const previewImg = document.getElementById('ocr-image') as HTMLImageElement;
+  const runBtn = document.getElementById('ocr-run') as HTMLButtonElement;
+  const clearBtn = document.getElementById('ocr-clear') as HTMLButtonElement;
+  const progressSec = document.getElementById('ocr-progress') as HTMLElement;
+  const progressFill = document.getElementById('ocr-progress-fill') as HTMLElement;
+  const statusEl = document.getElementById('ocr-status') as HTMLElement;
+  const resultSec = document.getElementById('ocr-result') as HTMLElement;
+  const resultText = document.getElementById('ocr-text') as HTMLTextAreaElement;
+  const resultMeta = document.getElementById('ocr-meta') as HTMLElement;
+  const copyBtn = document.getElementById('ocr-copy') as HTMLButtonElement;
+  const errorEl = document.getElementById('ocr-error') as HTMLElement;
 
-    function loadTesseract() {
-      if (window.Tesseract) return Promise.resolve(window.Tesseract);
-      if (tesseractPromise) return tesseractPromise;
-      tesseractPromise = new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = TESSERACT_CDN;
-        s.async = true;
-        s.onload = () => {
-          if (window.Tesseract) resolve(window.Tesseract);
-          else reject(new Error('Tesseract.js のロードに失敗しました'));
-        };
-        s.onerror = () => reject(new Error('Tesseract.js のダウンロードに失敗しました（オフライン？）'));
-        document.head.appendChild(s);
-      });
-      return tesseractPromise;
+  let currentBlob: Blob | null = null;
+  let currentObjectUrl: string | null = null;
+  let isRunning = false;
+  let worker: Worker | null = null;
+
+  function getWorker(): Worker {
+    if (!worker) worker = new OcrWorker();
+    return worker;
+  }
+
+  function showError(msg: string) {
+    errorEl.textContent = msg;
+    errorEl.hidden = false;
+  }
+  function clearError() {
+    errorEl.hidden = true;
+    errorEl.textContent = '';
+  }
+
+  function setImageFromBlob(blob: Blob) {
+    clearError();
+    if (!blob || !blob.type.startsWith('image/')) {
+      showError('画像ファイルではありません。');
+      return;
     }
+    currentBlob = blob;
+    if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+    currentObjectUrl = URL.createObjectURL(blob);
+    previewImg.src = currentObjectUrl;
+    previewSec.hidden = false;
+    resultSec.hidden = true;
+    progressSec.hidden = true;
+  }
 
-    function showError(msg) {
-      errorEl.textContent = msg;
-      errorEl.hidden = false;
+  function clearImage() {
+    currentBlob = null;
+    if (currentObjectUrl) {
+      URL.revokeObjectURL(currentObjectUrl);
+      currentObjectUrl = null;
     }
-    function clearError() {
-      errorEl.hidden = true;
-      errorEl.textContent = '';
+    previewImg.removeAttribute('src');
+    previewSec.hidden = true;
+    resultSec.hidden = true;
+    progressSec.hidden = true;
+    clearError();
+    fileInput.value = '';
+  }
+
+  // 入力: クリックでファイル選択
+  dropEl.addEventListener('click', () => fileInput.click());
+  dropEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      fileInput.click();
     }
+  });
+  fileInput.addEventListener('change', (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (file) setImageFromBlob(file);
+  });
 
-    function setImageFromBlob(blob) {
-      clearError();
-      if (!blob || !blob.type.startsWith('image/')) {
-        showError('画像ファイルではありません。');
-        return;
-      }
-      currentBlob = blob;
-      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-      currentObjectUrl = URL.createObjectURL(blob);
-      previewImg.src = currentObjectUrl;
-      previewSec.hidden = false;
-      resultSec.hidden = true;
-      progressSec.hidden = true;
-    }
+  // 入力: ドラッグ & ドロップ
+  (['dragenter', 'dragover'] as const).forEach((evt) =>
+    dropEl.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropEl.classList.add('is-dragover');
+    }),
+  );
+  (['dragleave', 'drop'] as const).forEach((evt) =>
+    dropEl.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropEl.classList.remove('is-dragover');
+    }),
+  );
+  dropEl.addEventListener('drop', (e) => {
+    const file = e.dataTransfer?.files?.[0];
+    if (file) setImageFromBlob(file);
+  });
 
-    function clearImage() {
-      currentBlob = null;
-      if (currentObjectUrl) {
-        URL.revokeObjectURL(currentObjectUrl);
-        currentObjectUrl = null;
-      }
-      previewImg.removeAttribute('src');
-      previewSec.hidden = true;
-      resultSec.hidden = true;
-      progressSec.hidden = true;
-      clearError();
-      fileInput.value = '';
-    }
-
-    // 入力: クリックでファイル選択
-    dropEl.addEventListener('click', () => fileInput.click());
-    dropEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        fileInput.click();
-      }
-    });
-    fileInput.addEventListener('change', (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (file) setImageFromBlob(file);
-    });
-
-    // 入力: ドラッグ & ドロップ
-    ['dragenter', 'dragover'].forEach((evt) =>
-      dropEl.addEventListener(evt, (e) => {
-        e.preventDefault();
-        dropEl.classList.add('is-dragover');
-      })
-    );
-    ['dragleave', 'drop'].forEach((evt) =>
-      dropEl.addEventListener(evt, (e) => {
-        e.preventDefault();
-        dropEl.classList.remove('is-dragover');
-      })
-    );
-    dropEl.addEventListener('drop', (e) => {
-      const dt = e.dataTransfer;
-      if (!dt) return;
-      const file = dt.files && dt.files[0];
-      if (file) setImageFromBlob(file);
-    });
-
-    // 入力: クリップボードから貼り付け
-    document.addEventListener('paste', (e) => {
-      const items = e.clipboardData && e.clipboardData.items;
-      if (!items) return;
-      for (const item of items) {
-        if (item.type && item.type.startsWith('image/')) {
-          const file = item.getAsFile();
-          if (file) {
-            e.preventDefault();
-            setImageFromBlob(file);
-            return;
-          }
+  // 入力: クリップボードから貼り付け
+  document.addEventListener('paste', (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          setImageFromBlob(file);
+          return;
         }
       }
-    });
-
-    clearBtn.addEventListener('click', clearImage);
-
-    function statusLabel(status) {
-      const map = {
-        'loading tesseract core': 'OCR エンジンを読み込み中…',
-        'initializing tesseract': 'OCR エンジンを初期化中…',
-        'loading language traineddata': '言語モデルをダウンロード中…',
-        'initializing api': 'OCR API を初期化中…',
-        'initialized api': '初期化完了',
-        'recognizing text': '文字を認識中…',
-      };
-      return map[status] || status;
     }
+  });
 
-    function showProgress(status, progress) {
-      progressSec.hidden = false;
-      statusEl.textContent = statusLabel(status);
-      const pct = Math.max(0, Math.min(1, Number(progress) || 0)) * 100;
+  clearBtn.addEventListener('click', clearImage);
+
+  // Blob → RGBA ピクセル配列。PaddleOCR.js は ImageInput { width, height, data } を要求する。
+  async function blobToImagePixels(blob: Blob): Promise<{ width: number; height: number; pixels: Uint8Array }> {
+    const bitmap = await createImageBitmap(blob);
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas 2D コンテキストを取得できませんでした');
+      ctx.drawImage(bitmap, 0, 0);
+      const imgData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+      return {
+        width: imgData.width,
+        height: imgData.height,
+        pixels: new Uint8Array(imgData.data.buffer),
+      };
+    } finally {
+      bitmap.close();
+    }
+  }
+
+  function showProgress(status: string, ratio: number | null) {
+    progressSec.hidden = false;
+    statusEl.textContent = status;
+    if (ratio == null) {
+      progressFill.style.width = '0%';
+    } else {
+      const pct = Math.max(0, Math.min(1, ratio)) * 100;
       progressFill.style.width = pct.toFixed(1) + '%';
     }
+  }
 
-    runBtn.addEventListener('click', async () => {
-      if (!currentBlob || isRunning) return;
-      isRunning = true;
-      runBtn.disabled = true;
-      clearError();
-      resultSec.hidden = true;
-      progressSec.hidden = false;
-      progressFill.style.width = '0%';
-      statusEl.textContent = '準備中…';
+  runBtn.addEventListener('click', async () => {
+    if (!currentBlob || isRunning) return;
+    isRunning = true;
+    runBtn.disabled = true;
+    clearError();
+    resultSec.hidden = true;
+    showProgress('画像を読み込み中…', 0);
 
-      const startedAt = performance.now();
-      let worker = null;
-      try {
-        const Tesseract = await loadTesseract();
-        const lang = langSel.value;
-        worker = await Tesseract.createWorker(lang, 1, {
-          logger: (m) => showProgress(m.status, m.progress),
-        });
-        const { data } = await worker.recognize(currentBlob);
-        const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
-        resultText.value = data.text || '';
-        const conf = typeof data.confidence === 'number' ? data.confidence.toFixed(1) : '-';
-        resultMeta.textContent = `言語: ${lang} / 信頼度: ${conf} / 処理時間: ${elapsed} 秒`;
+    let pixels: { width: number; height: number; pixels: Uint8Array };
+    try {
+      pixels = await blobToImagePixels(currentBlob);
+    } catch (err) {
+      progressSec.hidden = true;
+      showError('画像の読み込みに失敗しました: ' + (err instanceof Error ? err.message : String(err)));
+      isRunning = false;
+      runBtn.disabled = false;
+      return;
+    }
+
+    const w = getWorker();
+    const handler = (event: MessageEvent<WorkerMessage>) => {
+      const msg = event.data;
+      if (msg.type === 'status') {
+        showProgress(msg.status, msg.progress);
+      } else if (msg.type === 'result') {
+        progressSec.hidden = true;
+        resultText.value = msg.text || '';
+        const conf = (msg.confidence * 100).toFixed(1);
+        resultMeta.textContent = `行数: ${msg.lines} / 信頼度: ${conf}% / 処理時間: ${msg.elapsed.toFixed(1)} 秒`;
         resultSec.hidden = false;
-        progressSec.hidden = true;
-      } catch (err) {
-        progressSec.hidden = true;
-        showError('OCR に失敗しました: ' + (err && err.message ? err.message : String(err)));
-      } finally {
-        if (worker) {
-          try { await worker.terminate(); } catch (_) { /* noop */ }
+        if (!msg.text) {
+          resultMeta.textContent += '  (テキストが検出されませんでした)';
         }
+        w.removeEventListener('message', handler);
+        isRunning = false;
+        runBtn.disabled = false;
+      } else if (msg.type === 'error') {
+        progressSec.hidden = true;
+        showError('OCR に失敗しました: ' + msg.message);
+        w.removeEventListener('message', handler);
         isRunning = false;
         runBtn.disabled = false;
       }
-    });
+    };
+    w.addEventListener('message', handler);
+    // ピクセル配列は ArrayBuffer 越しに transfer して大きいデータのコピーを避ける。
+    w.postMessage(
+      { type: 'recognize', width: pixels.width, height: pixels.height, pixels: pixels.pixels },
+      [pixels.pixels.buffer],
+    );
+  });
 
-    copyBtn.addEventListener('click', async () => {
-      const text = resultText.value;
-      if (!text) return;
-      try {
-        await navigator.clipboard.writeText(text);
-        const original = copyBtn.textContent;
-        copyBtn.textContent = 'コピーしました';
-        setTimeout(() => { copyBtn.textContent = original; }, 1500);
-      } catch (_) {
-        resultText.select();
-        document.execCommand('copy');
-      }
-    });
-  })();
+  copyBtn.addEventListener('click', async () => {
+    const text = resultText.value;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      const original = copyBtn.textContent;
+      copyBtn.textContent = 'コピーしました';
+      setTimeout(() => { copyBtn.textContent = original; }, 1500);
+    } catch (_) {
+      resultText.select();
+      document.execCommand('copy');
+    }
+  });
 </script>
 
 <style>
   .ocr-tool {
     margin-top: 1rem;
-  }
-
-  .ocr-config {
-    margin: 1.5rem 0;
-  }
-
-  .ocr-config-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.625rem;
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-  }
-
-  .ocr-config-label select {
-    font: inherit;
-    padding: 0.375rem 0.625rem;
-    background: var(--bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
   }
 
   .ocr-drop {
@@ -307,6 +292,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
+    margin-top: 1.5rem;
     padding: 2.5rem 1rem;
     border: 2px dashed var(--border);
     border-radius: 8px;
