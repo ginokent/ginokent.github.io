@@ -246,7 +246,12 @@ async function ensureTesseractWorker(): Promise<any> {
     'recognizing text': '文字を認識中',
   };
   tesseractWorkerInst = await createTesseractWorker('jpn+eng', 1, {
-    workerPath: tesseractWorkerUrl,
+    // Tesseract.js は内部で `blob:` URL の Worker を作り、そのなかで
+    // `importScripts(workerPath)` を呼ぶ。`blob:` Worker のロケーションは
+    // `blob:...` なので、Vite の `?url` が返す相対パス (e.g.
+    // `/_astro/worker.min-XXXX.js`) は importScripts で解決できず
+    // "URL is invalid" になる。絶対 URL に変換してから渡す。
+    workerPath: new URL(tesseractWorkerUrl, self.location.href).href,
     corePath: TESSERACT_CORE_BASE,
     langPath: TESSERACT_LANG_BASE,
     logger: (m: { status: string; progress: number }) => {
