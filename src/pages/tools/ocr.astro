@@ -47,19 +47,19 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       tabindex="0"
       aria-label="画像を選択、ドロップ、または貼り付け"
     >
-      <p class="ocr-drop-hint">
-        クリックでファイル選択 / ここにドラッグ&ドロップ / <kbd>Ctrl</kbd> または <kbd>⌘</kbd> + <kbd>V</kbd> で画像を貼り付け
-      </p>
-      <p class="ocr-drop-sub">対応形式: PNG, JPEG, WebP, BMP など</p>
+      <div class="ocr-drop-empty">
+        <p class="ocr-drop-hint">
+          クリックでファイル選択 / ここにドラッグ&ドロップ / <kbd>Ctrl</kbd> または <kbd>⌘</kbd> + <kbd>V</kbd> で画像を貼り付け
+        </p>
+        <p class="ocr-drop-sub">対応形式: PNG, JPEG, WebP, BMP など</p>
+      </div>
+      <img id="ocr-image" class="ocr-drop-image" alt="プレビュー" />
       <input type="file" id="ocr-file" accept="image/*" hidden />
     </section>
 
-    <section id="ocr-preview" class="ocr-preview" hidden>
-      <img id="ocr-image" alt="プレビュー" />
-      <div class="ocr-actions">
-        <button type="button" id="ocr-run" class="ocr-button ocr-button-primary">OCR 実行</button>
-        <button type="button" id="ocr-clear" class="ocr-button ocr-button-secondary">クリア</button>
-      </div>
+    <section id="ocr-actions" class="ocr-actions" hidden>
+      <button type="button" id="ocr-run" class="ocr-button ocr-button-primary">OCR 実行</button>
+      <button type="button" id="ocr-clear" class="ocr-button ocr-button-secondary">クリア</button>
     </section>
 
     <section id="ocr-progress" class="ocr-progress" hidden aria-live="polite">
@@ -120,8 +120,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
   const dropEl = document.getElementById('ocr-drop') as HTMLElement;
   const fileInput = document.getElementById('ocr-file') as HTMLInputElement;
-  const previewSec = document.getElementById('ocr-preview') as HTMLElement;
   const previewImg = document.getElementById('ocr-image') as HTMLImageElement;
+  const actionsSec = document.getElementById('ocr-actions') as HTMLElement;
   const runBtn = document.getElementById('ocr-run') as HTMLButtonElement;
   const clearBtn = document.getElementById('ocr-clear') as HTMLButtonElement;
   const progressSec = document.getElementById('ocr-progress') as HTMLElement;
@@ -182,7 +182,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
     currentObjectUrl = URL.createObjectURL(blob);
     previewImg.src = currentObjectUrl;
-    previewSec.hidden = false;
+    dropEl.classList.add('has-image');
+    actionsSec.hidden = false;
     resultSec.hidden = true;
     progressSec.hidden = true;
   }
@@ -194,7 +195,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       currentObjectUrl = null;
     }
     previewImg.removeAttribute('src');
-    previewSec.hidden = true;
+    dropEl.classList.remove('has-image');
+    actionsSec.hidden = true;
     resultSec.hidden = true;
     progressSec.hidden = true;
     clearError();
@@ -418,6 +420,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     border-radius: 3px;
   }
 
+  /* 画像領域 = ドロップゾーン。空状態ではヒント文 (placeholder) が、
+     画像選択後は同じ枠の中に <img> が表示される。.has-image クラスで切替。
+     これにより画像が来たときに別ブロックがいきなり生えるのを防ぐ。 */
   .ocr-drop {
     display: flex;
     flex-direction: column;
@@ -425,14 +430,15 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     justify-content: center;
     gap: 0.5rem;
     margin-top: 1.5rem;
-    padding: 2.5rem 1rem;
+    padding: 1rem;
+    min-height: 14rem;
     border: 2px dashed var(--border);
     border-radius: 8px;
     background: var(--bg-secondary);
     color: var(--text-secondary);
     cursor: pointer;
     text-align: center;
-    transition: border-color 0.2s, background-color 0.2s;
+    transition: border-color 0.2s, background-color 0.2s, min-height 0.2s;
   }
 
   .ocr-drop:hover,
@@ -445,6 +451,17 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   .ocr-drop.is-dragover {
     border-color: var(--accent);
     background: var(--bg);
+  }
+
+  .ocr-drop-empty {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1.5rem 0;
+  }
+
+  .ocr-drop.has-image .ocr-drop-empty {
+    display: none;
   }
 
   .ocr-drop-hint {
@@ -465,32 +482,29 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     border-radius: 4px;
   }
 
-  .ocr-preview {
-    margin-top: 1.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  /* display: flex がブラウザ既定の `[hidden] { display: none }` を上書き
-     してしまうため、明示的に hidden 時は非表示にする。これがないと
-     画像未選択時に <img> の壊れアイコンが見えてしまう。 */
-  .ocr-preview[hidden] {
+  /* <img> は src が無い間は壊れアイコンを出さないよう非表示にしておき、
+     .has-image が付いたときだけ表示する。 */
+  .ocr-drop-image {
     display: none;
-  }
-
-  .ocr-preview img {
     max-width: 100%;
     max-height: 360px;
-    align-self: flex-start;
     border-radius: 6px;
-    background: var(--bg-secondary);
+    background: var(--bg);
+  }
+
+  .ocr-drop.has-image .ocr-drop-image {
+    display: block;
   }
 
   .ocr-actions {
+    margin-top: 1rem;
     display: flex;
     gap: 0.5rem;
     flex-wrap: wrap;
+  }
+
+  .ocr-actions[hidden] {
+    display: none;
   }
 
   .ocr-button {
