@@ -19,7 +19,8 @@
     "astro": "^5.16.8",
     "onnxruntime-web": "^1.22.0",
     "paddleocr": "^1.1.1",
-    "remark-breaks": "^4.0.0"
+    "remark-breaks": "^4.0.0",
+    "tesseract.js": "5.1.1"
   },
   "apackageManager": "pnpm@10.27.0"
 }

@@ -4,14 +4,20 @@
 // 複数の OCR エンジンをこのワーカ内でディスパッチする:
 //   - PP-OCRv5_mobile : PaddleOCR PP-OCRv5 mobile (ONNX Runtime Web 経由)
 //   - PP-OCRv5_server : PaddleOCR PP-OCRv5 server (同)
-//   - Tesseract.js    : Tesseract.js (CDN から動的 ESM import)
+//   - Tesseract.js    : Tesseract.js (npm からバンドル)
 //
-// すべての処理は Worker 内で完結し、画像データは外部に送信されない。
-// モデル/言語データは初回のみ CDN から取得し、Cache API に永続化する。
+// JS 本体はすべてバンドル (動的 CDN import なし)。
+// モデル / wasm / 言語データなどのバイナリリソースは初回のみ CDN から取得し、
+// Cache API に永続化する。すべての処理は Worker 内で完結し、画像データは
+// 外部に送信されない。
 
 import * as ort from 'onnxruntime-web';
 import { PaddleOcrService } from 'paddleocr';
 import type { PaddleOcrProgressEvent } from 'paddleocr';
+import { createWorker as createTesseractWorker } from 'tesseract.js';
+// worker.min.js (Tesseract.js が内部で spawn する Web Worker のスクリプト) は
+// Vite の `?url` 経由でバンドルし、同一オリジンから読み込ませる。
+import tesseractWorkerUrl from 'tesseract.js/dist/worker.min.js?url';
 
 // onnxruntime-web の wasm を CDN から取得する。npm の onnxruntime-web と
 // 完全に同一バージョンを指定する必要がある (構造体レイアウトが揃わないと
@@ -28,10 +34,13 @@ const MOBILE_BASE = `https://cdn.jsdelivr.net/gh/X3ZvaWQ/paddleocr.js@${MOBILE_C
 const SERVER_HF_REVISION = '06c3603ca8002e22e1f41d47c1aae0a251b4d940';
 const SERVER_BASE = `https://huggingface.co/marsena/paddleocr-onnx-models/resolve/${SERVER_HF_REVISION}`;
 
-// Tesseract.js は CDN から ESM を動的 import する (依存追加なしで取り込むため)。
-// バージョンは pin する。
-const TESSERACT_VERSION = '5.1.1';
-const TESSERACT_ESM_URL = `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT_VERSION}/dist/tesseract.esm.min.js`;
+// Tesseract.js 本体は npm からバンドル (上の import 文)。
+// core wasm (tesseract.js-core) と言語データ (traineddata.gz) はバイナリ
+// リソースなので実行時 CDN 取得を維持する。バージョンは package.json の
+// tesseract.js@5 の peer に合わせて pin する。
+const TESSERACT_CORE_VERSION = '5.1.1';
+const TESSERACT_CORE_BASE = `https://cdn.jsdelivr.net/npm/tesseract.js-core@${TESSERACT_CORE_VERSION}`;
+const TESSERACT_LANG_BASE = 'https://tessdata.projectnaptha.com/4.0.0';
 
 export type Engine = 'PP-OCRv5_mobile' | 'PP-OCRv5_server' | 'Tesseract.js';
 
@@ -222,21 +231,12 @@ async function runPaddle(engine: PaddleEngine, msg: RecognizeMessage): Promise<R
 // Tesseract.js
 // =============================================================================
 
-// Tesseract.js は CDN から ESM を動的 import する。Vite には URL を解決させない。
-// any 経由でアクセスするのは型定義を持たないため。
-let tesseractMod: any = null;
+// Tesseract.js は npm からバンドル済 (動的 CDN import を廃止)。
+// any 経由でアクセスするのは tesseract.js@5 の型が一部緩いため。
 let tesseractWorkerInst: any = null;
-
-async function loadTesseractMod(): Promise<any> {
-  if (tesseractMod) return tesseractMod;
-  postStatus('Tesseract.js を読込中', 0);
-  tesseractMod = await import(/* @vite-ignore */ TESSERACT_ESM_URL);
-  return tesseractMod;
-}
 
 async function ensureTesseractWorker(): Promise<any> {
   if (tesseractWorkerInst) return tesseractWorkerInst;
-  const mod = await loadTesseractMod();
   postStatus('Tesseract.js (jpn+eng) を初期化中', 0);
   const statusLabels: Record<string, string> = {
     'loading tesseract core': 'Tesseract コアを読込中',
@@ -245,7 +245,10 @@ async function ensureTesseractWorker(): Promise<any> {
     'initializing api': 'API を初期化中',
     'recognizing text': '文字を認識中',
   };
-  tesseractWorkerInst = await mod.createWorker('jpn+eng', 1, {
+  tesseractWorkerInst = await createTesseractWorker('jpn+eng', 1, {
+    workerPath: tesseractWorkerUrl,
+    corePath: TESSERACT_CORE_BASE,
+    langPath: TESSERACT_LANG_BASE,
     logger: (m: { status: string; progress: number }) => {
       const label = statusLabels[m.status] || m.status;
       postStatus(label, m.progress);
