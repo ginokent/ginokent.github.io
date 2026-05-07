@@ -271,11 +271,18 @@ async function destroyTesseract() {
 
 async function runTesseract(msg: RecognizeMessage): Promise<RunResult> {
   const w = await ensureTesseractWorker();
-  // Worker 内では HTMLImageElement が使えない。ImageData を直接渡す。
-  // Uint8Array → Uint8ClampedArray (RGBA, 4 channel)。
+  // Tesseract.js の loadImage は ImageData (生 RGBA) を扱えず、SetImageFile
+  // でデコード失敗 → "Error attempting to read image." になる。期待される
+  // のはエンコード済画像 (PNG/JPEG/BMP) のバイト列なので、OffscreenCanvas
+  // 経由で PNG Blob に再エンコードしてから渡す。
+  const canvas = new OffscreenCanvas(msg.width, msg.height);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('OffscreenCanvas 2D コンテキストを取得できません');
   const clamped = new Uint8ClampedArray(msg.pixels.buffer, msg.pixels.byteOffset, msg.pixels.byteLength);
-  const imageData = new ImageData(clamped, msg.width, msg.height);
-  const { data } = await w.recognize(imageData);
+  ctx.putImageData(new ImageData(clamped, msg.width, msg.height), 0, 0);
+  const pngBlob = await canvas.convertToBlob({ type: 'image/png' });
+
+  const { data } = await w.recognize(pngBlob);
   const text: string = data.text || '';
   const confidence: number = typeof data.confidence === 'number' ? data.confidence / 100 : 0;
   const lineCount: number = Array.isArray(data.lines) ? data.lines.length : text.split('\n').filter(Boolean).length;
