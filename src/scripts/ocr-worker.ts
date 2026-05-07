@@ -1,11 +1,12 @@
 /// <reference lib="webworker" />
 //
-// PaddleOCR (PP-OCRv5 mobile) を ONNX Runtime Web で実行する Web Worker。
+// PaddleOCR (PP-OCRv5) を ONNX Runtime Web で実行する Web Worker。
 //
 // Tesseract.js は CJK で「文字単位の単語」と判定して文字間にスペースを挿入
-// する根本的な問題があったため、PaddleOCR に差し替えた。PP-OCRv5 mobile の
-// rec モデルは中・日・英・繁体字を 1 モデルでカバーするので言語選択は不要。
+// する根本的な問題があったため、PaddleOCR に差し替えた。PP-OCRv5 の rec
+// モデルは中・日・英・繁体字を 1 モデルでカバーするので言語選択は不要。
 //
+// モデルは mobile (軽量・初期値) / server (高精度) の 2 種を切替可。
 // すべての処理は Worker 内で完結し、画像データは外部に送信されない。
 // 初回のみ wasm / モデル / 辞書を CDN から取得する。
 
@@ -19,19 +20,46 @@ import type { PaddleOcrProgressEvent } from 'paddleocr';
 const ORT_VERSION = '1.25.1';
 ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
 
-// PaddleOCR.js (X3ZvaWQ) リポジトリの assets/ にある PP-OCRv5 mobile モデルを使う。
+// PaddleOCR.js (X3ZvaWQ) リポジトリの assets/ にある PP-OCRv5 mobile モデル。
 // commit ハッシュで pin することで上流変更の影響を受けない。
-const MODELS_COMMIT = '0e369855336cbee22be7fddb7e397aa0606027af';
-const MODELS_BASE = `https://cdn.jsdelivr.net/gh/X3ZvaWQ/paddleocr.js@${MODELS_COMMIT}/assets`;
+const MOBILE_COMMIT = '0e369855336cbee22be7fddb7e397aa0606027af';
+const MOBILE_BASE = `https://cdn.jsdelivr.net/gh/X3ZvaWQ/paddleocr.js@${MOBILE_COMMIT}/assets`;
+// PP-OCRv5 server モデルは marsena/paddleocr-onnx-models (HuggingFace) から取得。
+// 文字辞書は mobile/server で共通なので mobile 側を使い回す。
+const SERVER_HF_REVISION = '06c3603ca8002e22e1f41d47c1aae0a251b4d940';
+const SERVER_BASE = `https://huggingface.co/marsena/paddleocr-onnx-models/resolve/${SERVER_HF_REVISION}`;
+
+export type ModelVariant = 'mobile' | 'server';
+
+interface ModelSource {
+  det: string;
+  rec: string;
+  dict: string;
+}
+
+const SOURCES: Record<ModelVariant, ModelSource> = {
+  mobile: {
+    det: `${MOBILE_BASE}/PP-OCRv5_mobile_det_infer.onnx`,
+    rec: `${MOBILE_BASE}/PP-OCRv5_mobile_rec_infer.onnx`,
+    dict: `${MOBILE_BASE}/ppocrv5_dict.txt`,
+  },
+  server: {
+    det: `${SERVER_BASE}/PP-OCRv5_server_det_infer.onnx`,
+    rec: `${SERVER_BASE}/PP-OCRv5_server_rec_infer.onnx`,
+    dict: `${MOBILE_BASE}/ppocrv5_dict.txt`,
+  },
+};
 
 interface RecognizeMessage {
   type: 'recognize';
+  variant: ModelVariant;
   width: number;
   height: number;
   pixels: Uint8Array;
 }
 
 let service: PaddleOcrService | null = null;
+let currentVariant: ModelVariant | null = null;
 let initializing: Promise<PaddleOcrService> | null = null;
 
 function post(msg: unknown) {
@@ -71,20 +99,23 @@ async function downloadWithProgress(url: string, label: string): Promise<ArrayBu
   return merged.buffer;
 }
 
-async function ensureService(): Promise<PaddleOcrService> {
-  if (service) return service;
-  if (initializing) return initializing;
+async function ensureService(variant: ModelVariant): Promise<PaddleOcrService> {
+  if (service && currentVariant === variant) return service;
+  if (initializing && currentVariant === variant) return initializing;
+  // 種類が違うサービスを保持している場合は破棄してから作り直す。
+  if (service) {
+    try { await service.destroy(); } catch { /* noop */ }
+    service = null;
+  }
+  currentVariant = variant;
+  const src = SOURCES[variant];
   initializing = (async () => {
-    const detBuf = await downloadWithProgress(
-      `${MODELS_BASE}/PP-OCRv5_mobile_det_infer.onnx`,
-      '検出モデルをダウンロード中',
-    );
-    const recBuf = await downloadWithProgress(
-      `${MODELS_BASE}/PP-OCRv5_mobile_rec_infer.onnx`,
-      '認識モデルをダウンロード中',
-    );
+    const detLabel = variant === 'server' ? '検出モデル(server)をダウンロード中' : '検出モデルをダウンロード中';
+    const recLabel = variant === 'server' ? '認識モデル(server)をダウンロード中' : '認識モデルをダウンロード中';
+    const detBuf = await downloadWithProgress(src.det, detLabel);
+    const recBuf = await downloadWithProgress(src.rec, recLabel);
     postStatus('辞書をダウンロード中', 0);
-    const dictRes = await fetch(`${MODELS_BASE}/ppocrv5_dict.txt`);
+    const dictRes = await fetch(src.dict);
     if (!dictRes.ok) throw new Error(`辞書のダウンロードに失敗 (${dictRes.status})`);
     const dict = (await dictRes.text()).split(/\r?\n/);
     postStatus('OCR エンジンを初期化中', 0);
@@ -96,6 +127,7 @@ async function ensureService(): Promise<PaddleOcrService> {
       recognition: { modelBuffer: recBuf, charactersDictionary: dict },
     });
     service = s;
+    initializing = null;
     return s;
   })();
   return initializing;
@@ -104,7 +136,7 @@ async function ensureService(): Promise<PaddleOcrService> {
 self.addEventListener('message', async (e: MessageEvent<RecognizeMessage>) => {
   if (!e.data || e.data.type !== 'recognize') return;
   try {
-    const s = await ensureService();
+    const s = await ensureService(e.data.variant);
     postStatus('文字を検出中', 0);
     const t0 = performance.now();
     const results = await s.recognize(
@@ -129,6 +161,7 @@ self.addEventListener('message', async (e: MessageEvent<RecognizeMessage>) => {
       confidence: final.confidence,
       lines: final.lines.length,
       elapsed,
+      variant: e.data.variant,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

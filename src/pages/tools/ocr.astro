@@ -15,8 +15,27 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         画像から文字起こしします。OCR エンジン (PaddleOCR PP-OCRv5) と言語モデル・WebAssembly ランタイムは
         初回のみ CDN からダウンロードしますが、推論はすべてブラウザ内 (Web Worker) で実行され、
         画像データはどこにもアップロードされません。日本語・英語・中国語が混在していても自動で認識します。
+        精度を上げたい場合は下のモデル選択で <code>server</code> を選択してください
+        (初回のみ大きめのダウンロードが発生します)。
       </p>
     </header>
+
+    <section class="ocr-config">
+      <fieldset class="ocr-config-fieldset">
+        <legend class="ocr-config-legend">モデル</legend>
+        <label class="ocr-config-radio">
+          <input type="radio" name="ocr-model" value="mobile" id="ocr-model-mobile" checked />
+          <span><strong>mobile</strong> <span class="ocr-config-note">軽量・既定 (初回 ~21MB)</span></span>
+        </label>
+        <label class="ocr-config-radio">
+          <input type="radio" name="ocr-model" value="server" id="ocr-model-server" />
+          <span><strong>server</strong> <span class="ocr-config-note">高精度 (初回 ~172MB ダウンロード)</span></span>
+        </label>
+        <p class="ocr-config-hint">
+          URL に <code>?model=server</code> を付けてアクセスすると <code>server</code> をデフォルトに固定できます。
+        </p>
+      </fieldset>
+    </section>
 
     <section
       id="ocr-drop"
@@ -64,11 +83,34 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   // OCR ワーカは Vite に ?worker サフィックスで読み込ませる。
   // 推論はワーカ側で完結し、メインスレッドはこのファイルだけで完結する。
   import OcrWorker from '../../scripts/ocr-worker.ts?worker';
+  import type { ModelVariant } from '../../scripts/ocr-worker.ts';
 
   type WorkerMessage =
     | { type: 'status'; status: string; progress: number | null }
-    | { type: 'result'; text: string; confidence: number; lines: number; elapsed: number }
+    | { type: 'result'; text: string; confidence: number; lines: number; elapsed: number; variant: ModelVariant }
     | { type: 'error'; message: string };
+
+  function isModelVariant(v: string | null): v is ModelVariant {
+    return v === 'mobile' || v === 'server';
+  }
+
+  function readVariantFromUrl(): ModelVariant {
+    const v = new URLSearchParams(location.search).get('model');
+    return isModelVariant(v) ? v : 'mobile';
+  }
+
+  function writeVariantToUrl(v: ModelVariant) {
+    const url = new URL(location.href);
+    if (v === 'mobile') {
+      // mobile はデフォルトなのでクエリを残さず短い URL を維持する
+      url.searchParams.delete('model');
+    } else {
+      url.searchParams.set('model', v);
+    }
+    history.replaceState(null, '', url.toString());
+  }
+
+  let currentVariant: ModelVariant = readVariantFromUrl();
 
   const dropEl = document.getElementById('ocr-drop') as HTMLElement;
   const fileInput = document.getElementById('ocr-file') as HTMLInputElement;
@@ -84,15 +126,46 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   const resultMeta = document.getElementById('ocr-meta') as HTMLElement;
   const copyBtn = document.getElementById('ocr-copy') as HTMLButtonElement;
   const errorEl = document.getElementById('ocr-error') as HTMLElement;
+  const modelRadios = Array.from(
+    document.querySelectorAll<HTMLInputElement>('input[name="ocr-model"]'),
+  );
 
   let currentBlob: Blob | null = null;
   let currentObjectUrl: string | null = null;
   let isRunning = false;
   let worker: Worker | null = null;
+  let workerHandler: ((event: MessageEvent<WorkerMessage>) => void) | null = null;
 
   function getWorker(): Worker {
     if (!worker) worker = new OcrWorker();
     return worker;
+  }
+
+  // 初期 UI 同期: URL から読み取った variant をラジオに反映する。
+  for (const r of modelRadios) {
+    r.checked = r.value === currentVariant;
+    r.addEventListener('change', () => {
+      if (!r.checked) return;
+      if (!isModelVariant(r.value)) return;
+      const newVariant = r.value;
+      if (newVariant === currentVariant) return;
+      currentVariant = newVariant;
+      writeVariantToUrl(newVariant);
+      // 別モデルへ切替 = ロード済みモデルを抱えているワーカは破棄して
+      // 次回実行時に新モデルで再初期化させる。実行中は中断する。
+      if (worker) {
+        if (workerHandler) {
+          worker.removeEventListener('message', workerHandler);
+          workerHandler = null;
+        }
+        worker.terminate();
+        worker = null;
+      }
+      isRunning = false;
+      runBtn.disabled = false;
+      progressSec.hidden = true;
+      clearError();
+    });
   }
 
   function showError(msg: string) {
@@ -234,6 +307,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     }
 
     const w = getWorker();
+    const variantForRun = currentVariant;
     const handler = (event: MessageEvent<WorkerMessage>) => {
       const msg = event.data;
       if (msg.type === 'status') {
@@ -242,26 +316,35 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         progressSec.hidden = true;
         resultText.value = msg.text || '';
         const conf = (msg.confidence * 100).toFixed(1);
-        resultMeta.textContent = `行数: ${msg.lines} / 信頼度: ${conf}% / 処理時間: ${msg.elapsed.toFixed(1)} 秒`;
+        resultMeta.textContent = `モデル: ${msg.variant} / 行数: ${msg.lines} / 信頼度: ${conf}% / 処理時間: ${msg.elapsed.toFixed(1)} 秒`;
         resultSec.hidden = false;
         if (!msg.text) {
           resultMeta.textContent += '  (テキストが検出されませんでした)';
         }
         w.removeEventListener('message', handler);
+        if (workerHandler === handler) workerHandler = null;
         isRunning = false;
         runBtn.disabled = false;
       } else if (msg.type === 'error') {
         progressSec.hidden = true;
         showError('OCR に失敗しました: ' + msg.message);
         w.removeEventListener('message', handler);
+        if (workerHandler === handler) workerHandler = null;
         isRunning = false;
         runBtn.disabled = false;
       }
     };
+    workerHandler = handler;
     w.addEventListener('message', handler);
     // ピクセル配列は ArrayBuffer 越しに transfer して大きいデータのコピーを避ける。
     w.postMessage(
-      { type: 'recognize', width: pixels.width, height: pixels.height, pixels: pixels.pixels },
+      {
+        type: 'recognize',
+        variant: variantForRun,
+        width: pixels.width,
+        height: pixels.height,
+        pixels: pixels.pixels,
+      },
       [pixels.pixels.buffer],
     );
   });
@@ -284,6 +367,55 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 <style>
   .ocr-tool {
     margin-top: 1rem;
+  }
+
+  .ocr-config {
+    margin-top: 1.5rem;
+  }
+
+  .ocr-config-fieldset {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 1rem 1rem;
+  }
+
+  .ocr-config-legend {
+    padding: 0 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .ocr-config-radio {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+
+  .ocr-config-radio input {
+    margin: 0;
+  }
+
+  .ocr-config-note {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+  }
+
+  .ocr-config-hint {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .ocr-config-hint code {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    padding: 0 0.25rem;
+    background: var(--bg-secondary);
+    border-radius: 3px;
   }
 
   .ocr-drop {
