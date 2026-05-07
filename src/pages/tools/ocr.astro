@@ -1,0 +1,632 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="OCR (ローカル処理)"
+  description="ブラウザ内で完結する OCR ツール。画像はサーバーにアップロードされません。"
+  lang="ja"
+  canonicalPath="/tools/ocr"
+>
+  <article class="ocr-tool">
+    <header class="page-header">
+      <h1 class="page-title">OCR (ローカル処理)</h1>
+      <p class="page-description">
+        画像から文字起こしします。OCR エンジン本体・モデル・WebAssembly ランタイムは初回のみ
+        CDN からダウンロードしますが、推論はすべてブラウザ内 (Web Worker) で実行され、画像データは
+        どこにもアップロードされません。エンジンは以下から選べます。
+      </p>
+    </header>
+
+    <section class="ocr-config">
+      <fieldset class="ocr-config-fieldset">
+        <legend class="ocr-config-legend">エンジン / モデル</legend>
+        <label class="ocr-config-radio">
+          <input type="radio" name="ocr-model" value="PP-OCRv5_mobile" checked />
+          <span><strong>PP-OCRv5_mobile</strong> <span class="ocr-config-note">PaddleOCR・軽量・既定 (初回 ~21MB)</span></span>
+        </label>
+        <label class="ocr-config-radio">
+          <input type="radio" name="ocr-model" value="PP-OCRv5_server" />
+          <span><strong>PP-OCRv5_server</strong> <span class="ocr-config-note">PaddleOCR・高精度 (初回 ~172MB)</span></span>
+        </label>
+        <label class="ocr-config-radio">
+          <input type="radio" name="ocr-model" value="Tesseract.js" />
+          <span><strong>Tesseract.js</strong> <span class="ocr-config-note">古典 OCR・jpn+eng (初回 ~12MB)・CJK で文字間スペースが入る既知の挙動あり</span></span>
+        </label>
+        <p class="ocr-config-hint">
+          URL に <code>?model=PP-OCRv5_server</code> や <code>?model=Tesseract.js</code> を付けて
+          アクセスするとそのエンジンをデフォルトに固定できます。
+        </p>
+      </fieldset>
+    </section>
+
+    <section
+      id="ocr-drop"
+      class="ocr-drop"
+      role="button"
+      tabindex="0"
+      aria-label="画像を選択、ドロップ、または貼り付け"
+    >
+      <div class="ocr-drop-empty">
+        <p class="ocr-drop-hint">
+          クリックでファイル選択 / ここにドラッグ&ドロップ / <kbd>Ctrl</kbd> または <kbd>⌘</kbd> + <kbd>V</kbd> で画像を貼り付け
+        </p>
+        <p class="ocr-drop-sub">対応形式: PNG, JPEG, WebP, BMP など</p>
+      </div>
+      <img id="ocr-image" class="ocr-drop-image" alt="プレビュー" />
+      <input type="file" id="ocr-file" accept="image/*" hidden />
+    </section>
+
+    <section id="ocr-actions" class="ocr-actions" hidden>
+      <button type="button" id="ocr-run" class="ocr-button ocr-button-primary">OCR 実行</button>
+      <button type="button" id="ocr-clear" class="ocr-button ocr-button-secondary">クリア</button>
+    </section>
+
+    <section id="ocr-progress" class="ocr-progress" hidden aria-live="polite">
+      <div class="ocr-progress-bar">
+        <div id="ocr-progress-fill" class="ocr-progress-fill"></div>
+      </div>
+      <p id="ocr-status" class="ocr-status">準備中…</p>
+    </section>
+
+    <section id="ocr-result" class="ocr-result">
+      <div class="ocr-result-head">
+        <h2 class="ocr-result-title">結果</h2>
+        <button type="button" id="ocr-copy" class="ocr-button ocr-button-secondary" disabled>コピー</button>
+      </div>
+      <textarea
+        id="ocr-text"
+        class="ocr-text"
+        rows="14"
+        readonly
+        placeholder="OCR を実行するとここに文字起こし結果が表示されます。"></textarea>
+      <p id="ocr-meta" class="ocr-meta"></p>
+    </section>
+
+    <section id="ocr-error" class="ocr-error" hidden role="alert"></section>
+  </article>
+</BaseLayout>
+
+<script>
+  // OCR ワーカは Vite に ?worker サフィックスで読み込ませる。
+  // 推論はワーカ側で完結し、メインスレッドはこのファイルだけで完結する。
+  import OcrWorker from '../../scripts/ocr-worker.ts?worker';
+  import type { Engine } from '../../scripts/ocr-worker.ts';
+
+  type WorkerMessage =
+    | { type: 'status'; status: string; progress: number | null }
+    | { type: 'result'; engine: Engine; text: string; confidence: number; lines: number; elapsed: number; meta: string }
+    | { type: 'error'; message: string };
+
+  const DEFAULT_ENGINE: Engine = 'PP-OCRv5_mobile';
+  const ALL_ENGINES: readonly Engine[] = ['PP-OCRv5_mobile', 'PP-OCRv5_server', 'Tesseract.js'] as const;
+
+  function isEngine(v: string | null): v is Engine {
+    return v !== null && (ALL_ENGINES as readonly string[]).includes(v);
+  }
+
+  function readEngineFromUrl(): Engine {
+    const v = new URLSearchParams(location.search).get('model');
+    return isEngine(v) ? v : DEFAULT_ENGINE;
+  }
+
+  function writeEngineToUrl(e: Engine) {
+    const url = new URL(location.href);
+    if (e === DEFAULT_ENGINE) {
+      // デフォルトはクエリを残さず短い URL を維持する
+      url.searchParams.delete('model');
+    } else {
+      url.searchParams.set('model', e);
+    }
+    history.replaceState(null, '', url.toString());
+  }
+
+  let currentEngine: Engine = readEngineFromUrl();
+
+  const dropEl = document.getElementById('ocr-drop') as HTMLElement;
+  const fileInput = document.getElementById('ocr-file') as HTMLInputElement;
+  const previewImg = document.getElementById('ocr-image') as HTMLImageElement;
+  const actionsSec = document.getElementById('ocr-actions') as HTMLElement;
+  const runBtn = document.getElementById('ocr-run') as HTMLButtonElement;
+  const clearBtn = document.getElementById('ocr-clear') as HTMLButtonElement;
+  const progressSec = document.getElementById('ocr-progress') as HTMLElement;
+  const progressFill = document.getElementById('ocr-progress-fill') as HTMLElement;
+  const statusEl = document.getElementById('ocr-status') as HTMLElement;
+  const resultText = document.getElementById('ocr-text') as HTMLTextAreaElement;
+  const resultMeta = document.getElementById('ocr-meta') as HTMLElement;
+  const copyBtn = document.getElementById('ocr-copy') as HTMLButtonElement;
+  const errorEl = document.getElementById('ocr-error') as HTMLElement;
+  const modelRadios = Array.from(
+    document.querySelectorAll<HTMLInputElement>('input[name="ocr-model"]'),
+  );
+
+  let currentBlob: Blob | null = null;
+  let currentObjectUrl: string | null = null;
+  let isRunning = false;
+  let worker: Worker | null = null;
+  let workerHandler: ((event: MessageEvent<WorkerMessage>) => void) | null = null;
+
+  function getWorker(): Worker {
+    if (!worker) worker = new OcrWorker();
+    return worker;
+  }
+
+  // 初期 UI 同期: URL から読み取ったエンジンをラジオに反映する。
+  for (const r of modelRadios) {
+    r.checked = r.value === currentEngine;
+    r.addEventListener('change', () => {
+      if (!r.checked) return;
+      if (!isEngine(r.value)) return;
+      const next = r.value;
+      if (next === currentEngine) return;
+      currentEngine = next;
+      writeEngineToUrl(next);
+      // ワーカは内部で旧エンジンのリソースを destroy するので、ここでは
+      // terminate しない。次回 OCR 実行時に新エンジンが lazy-init される。
+      clearError();
+    });
+  }
+
+  function showError(msg: string) {
+    errorEl.textContent = msg;
+    errorEl.hidden = false;
+  }
+  function clearError() {
+    errorEl.hidden = true;
+    errorEl.textContent = '';
+  }
+
+  // 結果エリアを「未実行」状態に戻す。textarea は placeholder が見える状態に
+  // なり、コピーボタンは無効化される。新規 OCR 開始時 / 画像差し替え時 /
+  // クリア時に呼ぶ。
+  function resetResult() {
+    resultText.value = '';
+    resultMeta.textContent = '';
+    copyBtn.disabled = true;
+  }
+
+  function setImageFromBlob(blob: Blob) {
+    clearError();
+    if (!blob || !blob.type.startsWith('image/')) {
+      showError('画像ファイルではありません。');
+      return;
+    }
+    currentBlob = blob;
+    if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+    currentObjectUrl = URL.createObjectURL(blob);
+    previewImg.src = currentObjectUrl;
+    dropEl.classList.add('has-image');
+    actionsSec.hidden = false;
+    resetResult();
+    progressSec.hidden = true;
+  }
+
+  function clearImage() {
+    currentBlob = null;
+    if (currentObjectUrl) {
+      URL.revokeObjectURL(currentObjectUrl);
+      currentObjectUrl = null;
+    }
+    previewImg.removeAttribute('src');
+    dropEl.classList.remove('has-image');
+    actionsSec.hidden = true;
+    resetResult();
+    progressSec.hidden = true;
+    clearError();
+    fileInput.value = '';
+  }
+
+  // 入力: クリックでファイル選択
+  dropEl.addEventListener('click', () => fileInput.click());
+  dropEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      fileInput.click();
+    }
+  });
+  fileInput.addEventListener('change', (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (file) setImageFromBlob(file);
+  });
+
+  // 入力: ドラッグ & ドロップ
+  (['dragenter', 'dragover'] as const).forEach((evt) =>
+    dropEl.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropEl.classList.add('is-dragover');
+    }),
+  );
+  (['dragleave', 'drop'] as const).forEach((evt) =>
+    dropEl.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropEl.classList.remove('is-dragover');
+    }),
+  );
+  dropEl.addEventListener('drop', (e) => {
+    const file = e.dataTransfer?.files?.[0];
+    if (file) setImageFromBlob(file);
+  });
+
+  // 入力: クリップボードから貼り付け
+  document.addEventListener('paste', (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          setImageFromBlob(file);
+          return;
+        }
+      }
+    }
+  });
+
+  clearBtn.addEventListener('click', clearImage);
+
+  // Blob → RGBA ピクセル配列。PaddleOCR.js は ImageInput { width, height, data } を要求する。
+  async function blobToImagePixels(blob: Blob): Promise<{ width: number; height: number; pixels: Uint8Array }> {
+    const bitmap = await createImageBitmap(blob);
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas 2D コンテキストを取得できませんでした');
+      ctx.drawImage(bitmap, 0, 0);
+      const imgData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+      return {
+        width: imgData.width,
+        height: imgData.height,
+        pixels: new Uint8Array(imgData.data.buffer),
+      };
+    } finally {
+      bitmap.close();
+    }
+  }
+
+  function showProgress(status: string, ratio: number | null) {
+    progressSec.hidden = false;
+    statusEl.textContent = status;
+    if (ratio == null) {
+      progressFill.style.width = '0%';
+    } else {
+      const pct = Math.max(0, Math.min(1, ratio)) * 100;
+      progressFill.style.width = pct.toFixed(1) + '%';
+    }
+  }
+
+  runBtn.addEventListener('click', async () => {
+    if (!currentBlob || isRunning) return;
+    isRunning = true;
+    runBtn.disabled = true;
+    clearError();
+    resetResult();
+    showProgress('画像を読み込み中…', 0);
+
+    let pixels: { width: number; height: number; pixels: Uint8Array };
+    try {
+      pixels = await blobToImagePixels(currentBlob);
+    } catch (err) {
+      progressSec.hidden = true;
+      showError('画像の読み込みに失敗しました: ' + (err instanceof Error ? err.message : String(err)));
+      isRunning = false;
+      runBtn.disabled = false;
+      return;
+    }
+
+    const w = getWorker();
+    const engineForRun = currentEngine;
+    const handler = (event: MessageEvent<WorkerMessage>) => {
+      const msg = event.data;
+      if (msg.type === 'status') {
+        showProgress(msg.status, msg.progress);
+      } else if (msg.type === 'result') {
+        progressSec.hidden = true;
+        const text = msg.text || '';
+        resultText.value = text;
+        copyBtn.disabled = !text;
+        const conf = (msg.confidence * 100).toFixed(1);
+        const parts = [
+          `エンジン: ${msg.engine}`,
+          `行数: ${msg.lines}`,
+          `信頼度: ${conf}%`,
+          `処理時間: ${msg.elapsed.toFixed(1)} 秒`,
+        ];
+        if (!text) parts.push('(テキストが検出されませんでした)');
+        if (msg.meta) parts.push(`注: ${msg.meta}`);
+        resultMeta.textContent = parts.join(' / ');
+        w.removeEventListener('message', handler);
+        if (workerHandler === handler) workerHandler = null;
+        isRunning = false;
+        runBtn.disabled = false;
+      } else if (msg.type === 'error') {
+        progressSec.hidden = true;
+        showError('OCR に失敗しました: ' + msg.message);
+        w.removeEventListener('message', handler);
+        if (workerHandler === handler) workerHandler = null;
+        isRunning = false;
+        runBtn.disabled = false;
+      }
+    };
+    workerHandler = handler;
+    w.addEventListener('message', handler);
+    // ピクセル配列は ArrayBuffer 越しに transfer して大きいデータのコピーを避ける。
+    w.postMessage(
+      {
+        type: 'recognize',
+        engine: engineForRun,
+        width: pixels.width,
+        height: pixels.height,
+        pixels: pixels.pixels,
+      },
+      [pixels.pixels.buffer],
+    );
+  });
+
+  copyBtn.addEventListener('click', async () => {
+    const text = resultText.value;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      const original = copyBtn.textContent;
+      copyBtn.textContent = 'コピーしました';
+      setTimeout(() => { copyBtn.textContent = original; }, 1500);
+    } catch (_) {
+      resultText.select();
+      document.execCommand('copy');
+    }
+  });
+</script>
+
+<style>
+  .ocr-tool {
+    margin-top: 1rem;
+  }
+
+  .ocr-config {
+    margin-top: 1.5rem;
+  }
+
+  .ocr-config-fieldset {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 1rem 1rem;
+  }
+
+  .ocr-config-legend {
+    padding: 0 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .ocr-config-radio {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+
+  .ocr-config-radio input {
+    margin: 0;
+  }
+
+  .ocr-config-note {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+  }
+
+  .ocr-config-hint {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .ocr-config-hint code {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    padding: 0 0.25rem;
+    background: var(--bg-secondary);
+    border-radius: 3px;
+  }
+
+  /* 画像領域 = ドロップゾーン。空状態ではヒント文 (placeholder) が、
+     画像選択後は同じ枠の中に <img> が表示される。.has-image クラスで切替。
+     これにより画像が来たときに別ブロックがいきなり生えるのを防ぐ。 */
+  .ocr-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+    padding: 1rem;
+    min-height: 14rem;
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.2s, background-color 0.2s, min-height 0.2s;
+  }
+
+  .ocr-drop:hover,
+  .ocr-drop:focus-visible {
+    border-color: var(--accent);
+    color: var(--text);
+    outline: none;
+  }
+
+  .ocr-drop.is-dragover {
+    border-color: var(--accent);
+    background: var(--bg);
+  }
+
+  .ocr-drop-empty {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1.5rem 0;
+    transition: padding 0.2s, font-size 0.2s;
+  }
+
+  /* 画像ロード後はヒント文を残しつつコンパクト化して、画像 (下) が
+     主役になるようにする。「再選択 / 再ドロップ / 再貼り付け で差し替え可」
+     を案内し続ける役目。 */
+  .ocr-drop.has-image .ocr-drop-empty {
+    padding: 0;
+    font-size: 0.8125rem;
+  }
+
+  .ocr-drop-hint {
+    font-size: 0.9375rem;
+  }
+
+  .ocr-drop-sub {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+
+  .ocr-drop kbd {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    padding: 0.0625rem 0.375rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+
+  /* <img> は src が無い間は壊れアイコンを出さないよう非表示にしておき、
+     .has-image が付いたときだけ表示する。 */
+  .ocr-drop-image {
+    display: none;
+    max-width: 100%;
+    max-height: 360px;
+    border-radius: 6px;
+    background: var(--bg);
+  }
+
+  .ocr-drop.has-image .ocr-drop-image {
+    display: block;
+  }
+
+  .ocr-actions {
+    margin-top: 1rem;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .ocr-actions[hidden] {
+    display: none;
+  }
+
+  .ocr-button {
+    font: inherit;
+    font-size: 0.875rem;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+  }
+
+  .ocr-button:hover:not(:disabled) {
+    border-color: var(--text-secondary);
+  }
+
+  .ocr-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .ocr-button-primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  .ocr-button-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+    color: #fff;
+  }
+
+  .ocr-progress {
+    margin-top: 1.5rem;
+  }
+
+  .ocr-progress-bar {
+    height: 6px;
+    background: var(--bg-secondary);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .ocr-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width 0.2s ease;
+  }
+
+  .ocr-status {
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+
+  .ocr-result {
+    margin-top: 1.5rem;
+  }
+
+  .ocr-result-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .ocr-result-title {
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .ocr-text {
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.6;
+    padding: 0.75rem;
+    background: var(--bg-secondary);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    resize: vertical;
+  }
+
+  .ocr-meta {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .ocr-error {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--border);
+    border-left: 3px solid #d33;
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    font-size: 0.875rem;
+    color: var(--text);
+  }
+</style>

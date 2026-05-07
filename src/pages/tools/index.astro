@@ -1,0 +1,79 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+const tools = [
+  {
+    name: 'OCR (ローカル処理)',
+    href: '/tools/ocr/',
+    description: '画像から文字起こし。OCR 推論はブラウザ内で完結し、画像はサーバーにアップロードされません。',
+  },
+];
+---
+
+<BaseLayout title="Tools - ginokent Blog" description="ginokent が公開しているブラウザツール一覧" lang="ja" canonicalPath="/tools">
+  <h1 class="page-title">Tools</h1>
+  <p class="page-description">ブラウザだけで動くツール集</p>
+
+  <ul class="tools-list">
+    {tools.map((tool) => (
+      <li class="tools-item">
+        <a href={tool.href} class="tools-link">
+          <span class="tools-name">{tool.name}</span>
+          <span class="tools-desc">{tool.description}</span>
+        </a>
+      </li>
+    ))}
+  </ul>
+</BaseLayout>
+
+<style>
+  .page-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+
+  .page-description {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+  }
+
+  .tools-list {
+    list-style: none;
+  }
+
+  .tools-item {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tools-item:last-child {
+    border-bottom: none;
+  }
+
+  .tools-link {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.875rem 0;
+    color: var(--text);
+    transition: color 0.2s;
+  }
+
+  .tools-link:hover {
+    color: var(--accent);
+  }
+
+  .tools-name {
+    font-weight: 500;
+    font-size: 0.9375rem;
+  }
+
+  .tools-desc {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+  }
+
+  .tools-link:hover .tools-desc {
+    color: var(--accent);
+  }
+</style>
