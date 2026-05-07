@@ -472,6 +472,13 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     gap: 1rem;
   }
 
+  /* display: flex がブラウザ既定の `[hidden] { display: none }` を上書き
+     してしまうため、明示的に hidden 時は非表示にする。これがないと
+     画像未選択時に <img> の壊れアイコンが見えてしまう。 */
+  .ocr-preview[hidden] {
+    display: none;
+  }
+
   .ocr-preview img {
     max-width: 100%;
     max-height: 360px;
