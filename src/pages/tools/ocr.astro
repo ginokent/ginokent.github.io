@@ -1,0 +1,474 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="OCR (ローカル処理)"
+  description="ブラウザ内で完結する OCR ツール。画像はサーバーにアップロードされません。"
+  lang="ja"
+  canonicalPath="/tools/ocr"
+>
+  <article class="ocr-tool">
+    <header class="page-header">
+      <h1 class="page-title">OCR (ローカル処理)</h1>
+      <p class="page-description">
+        画像から文字起こしします。プログラム本体（WebAssembly）と言語モデルは初回のみ CDN からダウンロードしますが、
+        OCR 推論はすべてブラウザ内で実行されるため、画像データはどこにもアップロードされません。
+      </p>
+    </header>
+
+    <section class="ocr-config">
+      <label class="ocr-config-label">
+        <span>言語</span>
+        <select id="ocr-lang">
+          <option value="jpn" selected>日本語</option>
+          <option value="eng">英語</option>
+          <option value="jpn+eng">日本語 + 英語</option>
+        </select>
+      </label>
+    </section>
+
+    <section
+      id="ocr-drop"
+      class="ocr-drop"
+      role="button"
+      tabindex="0"
+      aria-label="画像を選択、ドロップ、または貼り付け"
+    >
+      <p class="ocr-drop-hint">
+        クリックでファイル選択 / ここにドラッグ&ドロップ / <kbd>Ctrl</kbd> または <kbd>⌘</kbd> + <kbd>V</kbd> で画像を貼り付け
+      </p>
+      <p class="ocr-drop-sub">対応形式: PNG, JPEG, WebP, BMP など</p>
+      <input type="file" id="ocr-file" accept="image/*" hidden />
+    </section>
+
+    <section id="ocr-preview" class="ocr-preview" hidden>
+      <img id="ocr-image" alt="プレビュー" />
+      <div class="ocr-actions">
+        <button type="button" id="ocr-run" class="ocr-button ocr-button-primary">OCR 実行</button>
+        <button type="button" id="ocr-clear" class="ocr-button ocr-button-secondary">クリア</button>
+      </div>
+    </section>
+
+    <section id="ocr-progress" class="ocr-progress" hidden aria-live="polite">
+      <div class="ocr-progress-bar">
+        <div id="ocr-progress-fill" class="ocr-progress-fill"></div>
+      </div>
+      <p id="ocr-status" class="ocr-status">準備中…</p>
+    </section>
+
+    <section id="ocr-result" class="ocr-result" hidden>
+      <div class="ocr-result-head">
+        <h2 class="ocr-result-title">結果</h2>
+        <button type="button" id="ocr-copy" class="ocr-button ocr-button-secondary">コピー</button>
+      </div>
+      <textarea id="ocr-text" class="ocr-text" rows="14" readonly></textarea>
+      <p id="ocr-meta" class="ocr-meta"></p>
+    </section>
+
+    <section id="ocr-error" class="ocr-error" hidden role="alert"></section>
+  </article>
+</BaseLayout>
+
+<script is:inline>
+  // Tesseract.js は CDN から動的ロードする。
+  // OCR の推論処理は WebAssembly でブラウザ内完結し、画像はネットワークに送出されない。
+  (function () {
+    const TESSERACT_CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+
+    const dropEl = document.getElementById('ocr-drop');
+    const fileInput = document.getElementById('ocr-file');
+    const langSel = document.getElementById('ocr-lang');
+    const previewSec = document.getElementById('ocr-preview');
+    const previewImg = document.getElementById('ocr-image');
+    const runBtn = document.getElementById('ocr-run');
+    const clearBtn = document.getElementById('ocr-clear');
+    const progressSec = document.getElementById('ocr-progress');
+    const progressFill = document.getElementById('ocr-progress-fill');
+    const statusEl = document.getElementById('ocr-status');
+    const resultSec = document.getElementById('ocr-result');
+    const resultText = document.getElementById('ocr-text');
+    const resultMeta = document.getElementById('ocr-meta');
+    const copyBtn = document.getElementById('ocr-copy');
+    const errorEl = document.getElementById('ocr-error');
+
+    let currentBlob = null;
+    let currentObjectUrl = null;
+    let isRunning = false;
+    let tesseractPromise = null;
+
+    function loadTesseract() {
+      if (window.Tesseract) return Promise.resolve(window.Tesseract);
+      if (tesseractPromise) return tesseractPromise;
+      tesseractPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = TESSERACT_CDN;
+        s.async = true;
+        s.onload = () => {
+          if (window.Tesseract) resolve(window.Tesseract);
+          else reject(new Error('Tesseract.js のロードに失敗しました'));
+        };
+        s.onerror = () => reject(new Error('Tesseract.js のダウンロードに失敗しました（オフライン？）'));
+        document.head.appendChild(s);
+      });
+      return tesseractPromise;
+    }
+
+    function showError(msg) {
+      errorEl.textContent = msg;
+      errorEl.hidden = false;
+    }
+    function clearError() {
+      errorEl.hidden = true;
+      errorEl.textContent = '';
+    }
+
+    function setImageFromBlob(blob) {
+      clearError();
+      if (!blob || !blob.type.startsWith('image/')) {
+        showError('画像ファイルではありません。');
+        return;
+      }
+      currentBlob = blob;
+      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+      currentObjectUrl = URL.createObjectURL(blob);
+      previewImg.src = currentObjectUrl;
+      previewSec.hidden = false;
+      resultSec.hidden = true;
+      progressSec.hidden = true;
+    }
+
+    function clearImage() {
+      currentBlob = null;
+      if (currentObjectUrl) {
+        URL.revokeObjectURL(currentObjectUrl);
+        currentObjectUrl = null;
+      }
+      previewImg.removeAttribute('src');
+      previewSec.hidden = true;
+      resultSec.hidden = true;
+      progressSec.hidden = true;
+      clearError();
+      fileInput.value = '';
+    }
+
+    // 入力: クリックでファイル選択
+    dropEl.addEventListener('click', () => fileInput.click());
+    dropEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        fileInput.click();
+      }
+    });
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) setImageFromBlob(file);
+    });
+
+    // 入力: ドラッグ & ドロップ
+    ['dragenter', 'dragover'].forEach((evt) =>
+      dropEl.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropEl.classList.add('is-dragover');
+      })
+    );
+    ['dragleave', 'drop'].forEach((evt) =>
+      dropEl.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropEl.classList.remove('is-dragover');
+      })
+    );
+    dropEl.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      if (!dt) return;
+      const file = dt.files && dt.files[0];
+      if (file) setImageFromBlob(file);
+    });
+
+    // 入力: クリップボードから貼り付け
+    document.addEventListener('paste', (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            setImageFromBlob(file);
+            return;
+          }
+        }
+      }
+    });
+
+    clearBtn.addEventListener('click', clearImage);
+
+    function statusLabel(status) {
+      const map = {
+        'loading tesseract core': 'OCR エンジンを読み込み中…',
+        'initializing tesseract': 'OCR エンジンを初期化中…',
+        'loading language traineddata': '言語モデルをダウンロード中…',
+        'initializing api': 'OCR API を初期化中…',
+        'initialized api': '初期化完了',
+        'recognizing text': '文字を認識中…',
+      };
+      return map[status] || status;
+    }
+
+    function showProgress(status, progress) {
+      progressSec.hidden = false;
+      statusEl.textContent = statusLabel(status);
+      const pct = Math.max(0, Math.min(1, Number(progress) || 0)) * 100;
+      progressFill.style.width = pct.toFixed(1) + '%';
+    }
+
+    runBtn.addEventListener('click', async () => {
+      if (!currentBlob || isRunning) return;
+      isRunning = true;
+      runBtn.disabled = true;
+      clearError();
+      resultSec.hidden = true;
+      progressSec.hidden = false;
+      progressFill.style.width = '0%';
+      statusEl.textContent = '準備中…';
+
+      const startedAt = performance.now();
+      let worker = null;
+      try {
+        const Tesseract = await loadTesseract();
+        const lang = langSel.value;
+        worker = await Tesseract.createWorker(lang, 1, {
+          logger: (m) => showProgress(m.status, m.progress),
+        });
+        const { data } = await worker.recognize(currentBlob);
+        const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
+        resultText.value = data.text || '';
+        const conf = typeof data.confidence === 'number' ? data.confidence.toFixed(1) : '-';
+        resultMeta.textContent = `言語: ${lang} / 信頼度: ${conf} / 処理時間: ${elapsed} 秒`;
+        resultSec.hidden = false;
+        progressSec.hidden = true;
+      } catch (err) {
+        progressSec.hidden = true;
+        showError('OCR に失敗しました: ' + (err && err.message ? err.message : String(err)));
+      } finally {
+        if (worker) {
+          try { await worker.terminate(); } catch (_) { /* noop */ }
+        }
+        isRunning = false;
+        runBtn.disabled = false;
+      }
+    });
+
+    copyBtn.addEventListener('click', async () => {
+      const text = resultText.value;
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        const original = copyBtn.textContent;
+        copyBtn.textContent = 'コピーしました';
+        setTimeout(() => { copyBtn.textContent = original; }, 1500);
+      } catch (_) {
+        resultText.select();
+        document.execCommand('copy');
+      }
+    });
+  })();
+</script>
+
+<style>
+  .ocr-tool {
+    margin-top: 1rem;
+  }
+
+  .ocr-config {
+    margin: 1.5rem 0;
+  }
+
+  .ocr-config-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+  }
+
+  .ocr-config-label select {
+    font: inherit;
+    padding: 0.375rem 0.625rem;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
+  .ocr-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 2.5rem 1rem;
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.2s, background-color 0.2s;
+  }
+
+  .ocr-drop:hover,
+  .ocr-drop:focus-visible {
+    border-color: var(--accent);
+    color: var(--text);
+    outline: none;
+  }
+
+  .ocr-drop.is-dragover {
+    border-color: var(--accent);
+    background: var(--bg);
+  }
+
+  .ocr-drop-hint {
+    font-size: 0.9375rem;
+  }
+
+  .ocr-drop-sub {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+
+  .ocr-drop kbd {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    padding: 0.0625rem 0.375rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+
+  .ocr-preview {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .ocr-preview img {
+    max-width: 100%;
+    max-height: 360px;
+    align-self: flex-start;
+    border-radius: 6px;
+    background: var(--bg-secondary);
+  }
+
+  .ocr-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .ocr-button {
+    font: inherit;
+    font-size: 0.875rem;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+  }
+
+  .ocr-button:hover:not(:disabled) {
+    border-color: var(--text-secondary);
+  }
+
+  .ocr-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .ocr-button-primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  .ocr-button-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+    color: #fff;
+  }
+
+  .ocr-progress {
+    margin-top: 1.5rem;
+  }
+
+  .ocr-progress-bar {
+    height: 6px;
+    background: var(--bg-secondary);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .ocr-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width 0.2s ease;
+  }
+
+  .ocr-status {
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+
+  .ocr-result {
+    margin-top: 1.5rem;
+  }
+
+  .ocr-result-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .ocr-result-title {
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .ocr-text {
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.6;
+    padding: 0.75rem;
+    background: var(--bg-secondary);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    resize: vertical;
+  }
+
+  .ocr-meta {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .ocr-error {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--border);
+    border-left: 3px solid #d33;
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    font-size: 0.875rem;
+    color: var(--text);
+  }
+</style>
