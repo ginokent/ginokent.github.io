@@ -1,14 +1,13 @@
 /// <reference lib="webworker" />
 //
-// PaddleOCR (PP-OCRv5) を ONNX Runtime Web で実行する Web Worker。
+// OCR ツールのコア Web Worker。
+// 複数の OCR エンジンをこのワーカ内でディスパッチする:
+//   - PP-OCRv5_mobile : PaddleOCR PP-OCRv5 mobile (ONNX Runtime Web 経由)
+//   - PP-OCRv5_server : PaddleOCR PP-OCRv5 server (同)
+//   - Tesseract.js    : Tesseract.js (CDN から動的 ESM import)
 //
-// Tesseract.js は CJK で「文字単位の単語」と判定して文字間にスペースを挿入
-// する根本的な問題があったため、PaddleOCR に差し替えた。PP-OCRv5 の rec
-// モデルは中・日・英・繁体字を 1 モデルでカバーするので言語選択は不要。
-//
-// モデルは mobile (軽量・初期値) / server (高精度) の 2 種を切替可。
 // すべての処理は Worker 内で完結し、画像データは外部に送信されない。
-// 初回のみ wasm / モデル / 辞書を CDN から取得する。
+// モデル/言語データは初回のみ CDN から取得し、Cache API に永続化する。
 
 import * as ort from 'onnxruntime-web';
 import { PaddleOcrService } from 'paddleocr';
@@ -29,7 +28,18 @@ const MOBILE_BASE = `https://cdn.jsdelivr.net/gh/X3ZvaWQ/paddleocr.js@${MOBILE_C
 const SERVER_HF_REVISION = '06c3603ca8002e22e1f41d47c1aae0a251b4d940';
 const SERVER_BASE = `https://huggingface.co/marsena/paddleocr-onnx-models/resolve/${SERVER_HF_REVISION}`;
 
-export type ModelVariant = 'mobile' | 'server';
+// Tesseract.js は CDN から ESM を動的 import する (依存追加なしで取り込むため)。
+// バージョンは pin する。
+const TESSERACT_VERSION = '5.1.1';
+const TESSERACT_ESM_URL = `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT_VERSION}/dist/tesseract.esm.min.js`;
+
+export type Engine = 'PP-OCRv5_mobile' | 'PP-OCRv5_server' | 'Tesseract.js';
+
+type PaddleEngine = 'PP-OCRv5_mobile' | 'PP-OCRv5_server';
+
+function isPaddleEngine(e: Engine): e is PaddleEngine {
+  return e === 'PP-OCRv5_mobile' || e === 'PP-OCRv5_server';
+}
 
 interface ModelSource {
   det: string;
@@ -37,13 +47,13 @@ interface ModelSource {
   dict: string;
 }
 
-const SOURCES: Record<ModelVariant, ModelSource> = {
-  mobile: {
+const PADDLE_SOURCES: Record<PaddleEngine, ModelSource> = {
+  'PP-OCRv5_mobile': {
     det: `${MOBILE_BASE}/PP-OCRv5_mobile_det_infer.onnx`,
     rec: `${MOBILE_BASE}/PP-OCRv5_mobile_rec_infer.onnx`,
     dict: `${MOBILE_BASE}/ppocrv5_dict.txt`,
   },
-  server: {
+  'PP-OCRv5_server': {
     det: `${SERVER_BASE}/PP-OCRv5_server_det_infer.onnx`,
     rec: `${SERVER_BASE}/PP-OCRv5_server_rec_infer.onnx`,
     dict: `${MOBILE_BASE}/ppocrv5_dict.txt`,
@@ -52,7 +62,7 @@ const SOURCES: Record<ModelVariant, ModelSource> = {
 
 interface RecognizeMessage {
   type: 'recognize';
-  variant: ModelVariant;
+  engine: Engine;
   width: number;
   height: number;
   pixels: Uint8Array;
@@ -60,7 +70,6 @@ interface RecognizeMessage {
 
 // Cache API でモデル ArrayBuffer を永続化する。
 // URL は commit/version で pin しているので、URL 一致 = 内容一致が保証される。
-// 同じ URL を再要求した場合は cache から ArrayBuffer を返してネットワーク往復を省略。
 const MODEL_CACHE_NAME = 'ginokent-ocr-models-v1';
 
 async function getCache(): Promise<Cache | null> {
@@ -71,10 +80,6 @@ async function getCache(): Promise<Cache | null> {
     return null;
   }
 }
-
-let service: PaddleOcrService | null = null;
-let currentVariant: ModelVariant | null = null;
-let initializing: Promise<PaddleOcrService> | null = null;
 
 function post(msg: unknown) {
   (self as DedicatedWorkerGlobalScope).postMessage(msg);
@@ -137,21 +142,32 @@ async function fetchCached(url: string, label: string): Promise<ArrayBuffer> {
   return buffer;
 }
 
-async function ensureService(variant: ModelVariant): Promise<PaddleOcrService> {
-  if (service && currentVariant === variant) return service;
-  if (initializing && currentVariant === variant) return initializing;
-  // 種類が違うサービスを保持している場合は破棄してから作り直す。
-  if (service) {
-    try { await service.destroy(); } catch { /* noop */ }
-    service = null;
+// =============================================================================
+// PaddleOCR
+// =============================================================================
+
+let paddleService: PaddleOcrService | null = null;
+let paddleEngine: PaddleEngine | null = null;
+let paddleInitializing: Promise<PaddleOcrService> | null = null;
+
+async function destroyPaddle() {
+  if (paddleService) {
+    try { await paddleService.destroy(); } catch { /* noop */ }
   }
-  currentVariant = variant;
-  const src = SOURCES[variant];
-  initializing = (async () => {
-    const detLabel = variant === 'server' ? '検出モデル(server)をダウンロード中' : '検出モデルをダウンロード中';
-    const recLabel = variant === 'server' ? '認識モデル(server)をダウンロード中' : '認識モデルをダウンロード中';
-    const detBuf = await fetchCached(src.det, detLabel);
-    const recBuf = await fetchCached(src.rec, recLabel);
+  paddleService = null;
+  paddleEngine = null;
+  paddleInitializing = null;
+}
+
+async function ensurePaddleService(engine: PaddleEngine): Promise<PaddleOcrService> {
+  if (paddleService && paddleEngine === engine) return paddleService;
+  if (paddleInitializing && paddleEngine === engine) return paddleInitializing;
+  await destroyPaddle();
+  paddleEngine = engine;
+  const src = PADDLE_SOURCES[engine];
+  paddleInitializing = (async () => {
+    const detBuf = await fetchCached(src.det, `検出モデル(${engine})をダウンロード中`);
+    const recBuf = await fetchCached(src.rec, `認識モデル(${engine})をダウンロード中`);
     const dictBuf = await fetchCached(src.dict, '辞書をダウンロード中');
     const dict = new TextDecoder().decode(dictBuf).split(/\r?\n/);
     postStatus('OCR エンジンを初期化中', 0);
@@ -162,42 +178,135 @@ async function ensureService(variant: ModelVariant): Promise<PaddleOcrService> {
       detection: { modelBuffer: detBuf },
       recognition: { modelBuffer: recBuf, charactersDictionary: dict },
     });
-    service = s;
-    initializing = null;
+    paddleService = s;
+    paddleInitializing = null;
     return s;
   })();
-  return initializing;
+  return paddleInitializing;
 }
+
+interface RunResult {
+  text: string;
+  confidence: number;
+  lines: number;
+  meta: string;
+}
+
+async function runPaddle(engine: PaddleEngine, msg: RecognizeMessage): Promise<RunResult> {
+  const s = await ensurePaddleService(engine);
+  postStatus('文字を検出中', 0);
+  const results = await s.recognize(
+    { width: msg.width, height: msg.height, data: msg.pixels },
+    {
+      onProgress: (ev: PaddleOcrProgressEvent) => {
+        const p = ev.progress;
+        const ratio = p.total ? p.current / p.total : 0;
+        if (ev.type === 'det') {
+          postStatus(`文字領域を検出中 (${ev.stage})`, ratio);
+        } else {
+          postStatus(`文字を認識中 (${p.current}/${p.total})`, ratio);
+        }
+      },
+    },
+  );
+  const final = s.processRecognition(results);
+  return {
+    text: final.text,
+    confidence: final.confidence,
+    lines: final.lines.length,
+    meta: '',
+  };
+}
+
+// =============================================================================
+// Tesseract.js
+// =============================================================================
+
+// Tesseract.js は CDN から ESM を動的 import する。Vite には URL を解決させない。
+// any 経由でアクセスするのは型定義を持たないため。
+let tesseractMod: any = null;
+let tesseractWorkerInst: any = null;
+
+async function loadTesseractMod(): Promise<any> {
+  if (tesseractMod) return tesseractMod;
+  postStatus('Tesseract.js を読込中', 0);
+  tesseractMod = await import(/* @vite-ignore */ TESSERACT_ESM_URL);
+  return tesseractMod;
+}
+
+async function ensureTesseractWorker(): Promise<any> {
+  if (tesseractWorkerInst) return tesseractWorkerInst;
+  const mod = await loadTesseractMod();
+  postStatus('Tesseract.js (jpn+eng) を初期化中', 0);
+  const statusLabels: Record<string, string> = {
+    'loading tesseract core': 'Tesseract コアを読込中',
+    'initializing tesseract': 'Tesseract を初期化中',
+    'loading language traineddata': '言語モデル(jpn+eng)をダウンロード中',
+    'initializing api': 'API を初期化中',
+    'recognizing text': '文字を認識中',
+  };
+  tesseractWorkerInst = await mod.createWorker('jpn+eng', 1, {
+    logger: (m: { status: string; progress: number }) => {
+      const label = statusLabels[m.status] || m.status;
+      postStatus(label, m.progress);
+    },
+  });
+  return tesseractWorkerInst;
+}
+
+async function destroyTesseract() {
+  if (tesseractWorkerInst) {
+    try { await tesseractWorkerInst.terminate(); } catch { /* noop */ }
+  }
+  tesseractWorkerInst = null;
+}
+
+async function runTesseract(msg: RecognizeMessage): Promise<RunResult> {
+  const w = await ensureTesseractWorker();
+  // Worker 内では HTMLImageElement が使えない。ImageData を直接渡す。
+  // Uint8Array → Uint8ClampedArray (RGBA, 4 channel)。
+  const clamped = new Uint8ClampedArray(msg.pixels.buffer, msg.pixels.byteOffset, msg.pixels.byteLength);
+  const imageData = new ImageData(clamped, msg.width, msg.height);
+  const { data } = await w.recognize(imageData);
+  const text: string = data.text || '';
+  const confidence: number = typeof data.confidence === 'number' ? data.confidence / 100 : 0;
+  const lineCount: number = Array.isArray(data.lines) ? data.lines.length : text.split('\n').filter(Boolean).length;
+  return {
+    text,
+    confidence,
+    lines: lineCount,
+    meta: 'Tesseract.js は CJK 文字間にスペースを挿入する既知の挙動があります',
+  };
+}
+
+// =============================================================================
+// Dispatcher
+// =============================================================================
 
 self.addEventListener('message', async (e: MessageEvent<RecognizeMessage>) => {
   if (!e.data || e.data.type !== 'recognize') return;
+  const engine = e.data.engine;
   try {
-    const s = await ensureService(e.data.variant);
-    postStatus('文字を検出中', 0);
+    // 別ファミリへ切替時は使わないリソースを解放する。
+    if (isPaddleEngine(engine)) {
+      await destroyTesseract();
+    } else {
+      await destroyPaddle();
+    }
+
     const t0 = performance.now();
-    const results = await s.recognize(
-      { width: e.data.width, height: e.data.height, data: e.data.pixels },
-      {
-        onProgress: (ev: PaddleOcrProgressEvent) => {
-          const p = ev.progress;
-          const ratio = p.total ? p.current / p.total : 0;
-          if (ev.type === 'det') {
-            postStatus(`文字領域を検出中 (${ev.stage})`, ratio);
-          } else {
-            postStatus(`文字を認識中 (${p.current}/${p.total})`, ratio);
-          }
-        },
-      },
-    );
-    const final = s.processRecognition(results);
+    const result: RunResult = isPaddleEngine(engine)
+      ? await runPaddle(engine, e.data)
+      : await runTesseract(e.data);
     const elapsed = (performance.now() - t0) / 1000;
     post({
       type: 'result',
-      text: final.text,
-      confidence: final.confidence,
-      lines: final.lines.length,
+      engine,
+      text: result.text,
+      confidence: result.confidence,
+      lines: result.lines,
       elapsed,
-      variant: e.data.variant,
+      meta: result.meta,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
