@@ -69,12 +69,17 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       <p id="ocr-status" class="ocr-status">準備中…</p>
     </section>
 
-    <section id="ocr-result" class="ocr-result" hidden>
+    <section id="ocr-result" class="ocr-result">
       <div class="ocr-result-head">
         <h2 class="ocr-result-title">結果</h2>
-        <button type="button" id="ocr-copy" class="ocr-button ocr-button-secondary">コピー</button>
+        <button type="button" id="ocr-copy" class="ocr-button ocr-button-secondary" disabled>コピー</button>
       </div>
-      <textarea id="ocr-text" class="ocr-text" rows="14" readonly></textarea>
+      <textarea
+        id="ocr-text"
+        class="ocr-text"
+        rows="14"
+        readonly
+        placeholder="OCR を実行するとここに文字起こし結果が表示されます。"></textarea>
       <p id="ocr-meta" class="ocr-meta"></p>
     </section>
 
@@ -127,7 +132,6 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   const progressSec = document.getElementById('ocr-progress') as HTMLElement;
   const progressFill = document.getElementById('ocr-progress-fill') as HTMLElement;
   const statusEl = document.getElementById('ocr-status') as HTMLElement;
-  const resultSec = document.getElementById('ocr-result') as HTMLElement;
   const resultText = document.getElementById('ocr-text') as HTMLTextAreaElement;
   const resultMeta = document.getElementById('ocr-meta') as HTMLElement;
   const copyBtn = document.getElementById('ocr-copy') as HTMLButtonElement;
@@ -172,6 +176,15 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     errorEl.textContent = '';
   }
 
+  // 結果エリアを「未実行」状態に戻す。textarea は placeholder が見える状態に
+  // なり、コピーボタンは無効化される。新規 OCR 開始時 / 画像差し替え時 /
+  // クリア時に呼ぶ。
+  function resetResult() {
+    resultText.value = '';
+    resultMeta.textContent = '';
+    copyBtn.disabled = true;
+  }
+
   function setImageFromBlob(blob: Blob) {
     clearError();
     if (!blob || !blob.type.startsWith('image/')) {
@@ -184,7 +197,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     previewImg.src = currentObjectUrl;
     dropEl.classList.add('has-image');
     actionsSec.hidden = false;
-    resultSec.hidden = true;
+    resetResult();
     progressSec.hidden = true;
   }
 
@@ -197,7 +210,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     previewImg.removeAttribute('src');
     dropEl.classList.remove('has-image');
     actionsSec.hidden = true;
-    resultSec.hidden = true;
+    resetResult();
     progressSec.hidden = true;
     clearError();
     fileInput.value = '';
@@ -289,7 +302,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     isRunning = true;
     runBtn.disabled = true;
     clearError();
-    resultSec.hidden = true;
+    resetResult();
     showProgress('画像を読み込み中…', 0);
 
     let pixels: { width: number; height: number; pixels: Uint8Array };
@@ -311,7 +324,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         showProgress(msg.status, msg.progress);
       } else if (msg.type === 'result') {
         progressSec.hidden = true;
-        resultText.value = msg.text || '';
+        const text = msg.text || '';
+        resultText.value = text;
+        copyBtn.disabled = !text;
         const conf = (msg.confidence * 100).toFixed(1);
         const parts = [
           `エンジン: ${msg.engine}`,
@@ -319,10 +334,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           `信頼度: ${conf}%`,
           `処理時間: ${msg.elapsed.toFixed(1)} 秒`,
         ];
-        if (!msg.text) parts.push('(テキストが検出されませんでした)');
+        if (!text) parts.push('(テキストが検出されませんでした)');
         if (msg.meta) parts.push(`注: ${msg.meta}`);
         resultMeta.textContent = parts.join(' / ');
-        resultSec.hidden = false;
         w.removeEventListener('message', handler);
         if (workerHandler === handler) workerHandler = null;
         isRunning = false;
@@ -458,10 +472,15 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     flex-direction: column;
     gap: 0.5rem;
     padding: 1.5rem 0;
+    transition: padding 0.2s, font-size 0.2s;
   }
 
+  /* 画像ロード後はヒント文を残しつつコンパクト化して、画像 (下) が
+     主役になるようにする。「再選択 / 再ドロップ / 再貼り付け で差し替え可」
+     を案内し続ける役目。 */
   .ocr-drop.has-image .ocr-drop-empty {
-    display: none;
+    padding: 0;
+    font-size: 0.8125rem;
   }
 
   .ocr-drop-hint {
