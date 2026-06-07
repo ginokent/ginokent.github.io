@@ -157,4 +157,7 @@ vite.config.ts.timestamp-*
 tools/slack-bot/.message-map.json
 
 # other
-.claude/
+# .claude 直下のローカル設定 (settings.local.json 等) は無視するが、
+# 版管理したい skill は除外解除して追跡する
+.claude/*
+!.claude/skills/
