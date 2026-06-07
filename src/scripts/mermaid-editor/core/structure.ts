@@ -3,7 +3,7 @@ import type { TextEdit } from "./types";
 // 構造編集: 新しい要素 (ノード / エッジ) をテキストへ追加する。
 // 既存範囲を変更しないゼロ幅挿入として表現し、戦略 B と整合させる。
 
-const INDENT = "  ";
+export const INDENT = "  ";
 
 /** 既存 ID と衝突しない新しい ID (prefix1, prefix2, ...) を返す */
 export function freshNodeId(existing: Iterable<string>, prefix = "n"): string {

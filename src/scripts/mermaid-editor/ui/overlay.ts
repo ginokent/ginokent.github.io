@@ -1,4 +1,4 @@
-import { hasActivationMarker, type EditableElement, type NotePlacement } from "../core/types";
+import { hasActivationMarker, type BlockType, type EditableElement, type NotePlacement } from "../core/types";
 import { openInlineEditor } from "./inline";
 import { openMenu, type MenuAction } from "./menu";
 
@@ -66,7 +66,19 @@ export interface OverlayCallbacks {
   onSetActivation(el: EditableElement, sign: string): void;
   onAddNote(placement: NotePlacement, actorIds: string[], anchorId: string | null): void;
   onSetNotePlacement(el: EditableElement, placement: NotePlacement, actorIds: string[]): void;
+  onWrapBlock(from: EditableElement, to: EditableElement, type: BlockType): void;
+  onUnwrapBlock(el: EditableElement): void;
+  onSetBlockType(el: EditableElement, type: BlockType): void;
+  onAddBranch(el: EditableElement): void;
 }
+
+/** 制御ブロックの種別候補 (種別 → 表示名) */
+const BLOCK_TYPES: ReadonlyArray<{ type: BlockType; name: string }> = [
+  { type: "alt", name: "alt (条件分岐)" },
+  { type: "opt", name: "opt (任意)" },
+  { type: "loop", name: "loop (繰り返し)" },
+  { type: "par", name: "par (並行)" },
+];
 
 export function drawOverlay(
   overlayEl: HTMLElement,
@@ -93,6 +105,7 @@ export function drawOverlay(
   // Esc または枠外 (ヒット以外) のクリックで取消できる。
   type Pending =
     | { kind: "pickActor"; accept: (el: EditableElement) => boolean; onPick: (refId: string) => void }
+    | { kind: "pickEl"; accept: (el: EditableElement) => boolean; onPick: (el: EditableElement) => void }
     | { kind: "placeNote"; placement: NotePlacement; actorIds: string[] };
   let pending: Pending | null = null;
   let pickSource: Element | null = null;
@@ -139,6 +152,13 @@ export function drawOverlay(
   ) => beginPending({ kind: "pickActor", accept, onPick }, hintText, source);
   const startPlaceNote = (placement: NotePlacement, actorIds: string[], hintText: string, source?: Element) =>
     beginPending({ kind: "placeNote", placement, actorIds }, hintText, source);
+  // refId を持たない要素 (メッセージ等) を選ばせる。ブロックで囲む終端メッセージの指定に使う
+  const startPickEl = (
+    hintText: string,
+    accept: (el: EditableElement) => boolean,
+    onPick: (el: EditableElement) => void,
+    source?: Element,
+  ) => beginPending({ kind: "pickEl", accept, onPick }, hintText, source);
 
   /** pickActor 中にクリックされた要素を送信先候補として確定/取消する */
   const resolvePick = (el: EditableElement): void => {
@@ -147,6 +167,15 @@ export function drawOverlay(
     const { onPick } = pending;
     cancelPending();
     if (ok) onPick(el.refId!);
+  };
+
+  /** pickEl 中にクリックされた要素を確定/取消する (要素そのものを渡す) */
+  const resolvePickEl = (el: EditableElement): void => {
+    if (pending?.kind !== "pickEl") return;
+    const ok = pending.accept(el);
+    const { onPick } = pending;
+    cancelPending();
+    if (ok) onPick(el);
   };
 
   const edit = (el: EditableElement, fieldName: string, anchor: () => DOMRect) =>
@@ -189,10 +218,13 @@ export function drawOverlay(
       addRemove(a, el);
       return a;
     }
-    const a: MenuAction[] = el.fields.map((f) => ({
-      label: `${FIELD_LABELS[f.name] ?? f.name}を編集`,
-      onSelect: () => edit(el, f.name, anchor),
-    }));
+    // branchN (ブロックの else/and ラベル) は専用サブメニューで扱うため一覧からは除く
+    const a: MenuAction[] = el.fields
+      .filter((f) => !f.name.startsWith("branch"))
+      .map((f) => ({
+        label: `${FIELD_LABELS[f.name] ?? f.name}を編集`,
+        onSelect: () => edit(el, f.name, anchor),
+      }));
     if (el.kind === "node") {
       a.push({
         label: "新規ノードへ矢印",
@@ -263,6 +295,57 @@ export function drawOverlay(
             : { label: "矢印の向きを入れ替える", onSelect: () => cb.onReverse(el) },
         );
       }
+      // 始点をこのメッセージとし、終点メッセージをクリックで指定して囲む
+      a.push({
+        label: "ブロックで囲む ▸",
+        onSelect: () =>
+          setActive(
+            openMenu(
+              overlayEl,
+              anchor(),
+              stageRect,
+              BLOCK_TYPES.map((t) => ({
+                label: t.name,
+                onSelect: () =>
+                  startPickEl(
+                    `${t.name} で囲む終端のメッセージをクリック (Esc で取消)`,
+                    (e) => e.kind === "message",
+                    (to) => cb.onWrapBlock(el, to, t.type),
+                    hitEl,
+                  ),
+              })),
+            ),
+          ),
+      });
+    }
+    if (el.kind === "block" && el.block) {
+      const block = el.block;
+      a.push({
+        label: "種別を変更 ▸",
+        onSelect: () => setActive(openMenu(overlayEl, anchor(), stageRect, blockTypeActions(el))),
+      });
+      // 分岐 (else/and) の追加は alt/par のみ
+      if (block.type === "alt") a.push({ label: "else を追加", onSelect: () => cb.onAddBranch(el) });
+      else if (block.type === "par") a.push({ label: "and を追加", onSelect: () => cb.onAddBranch(el) });
+      // 分岐ラベルの編集 (分岐があるとき)。SVG に出ないため branchN フィールドを編集する
+      if (block.branches.length > 0) {
+        a.push({
+          label: `${block.branches[0].keyword} を編集 ▸`,
+          onSelect: () =>
+            setActive(
+              openMenu(
+                overlayEl,
+                anchor(),
+                stageRect,
+                block.branches.map((b, i) => ({
+                  label: `${b.keyword} ${b.label || "(空)"}`,
+                  onSelect: () => edit(el, `branch${i}`, anchor),
+                })),
+              ),
+            ),
+        });
+      }
+      a.push({ label: "ブロックを解除 (囲みを残さない)", onSelect: () => cb.onUnwrapBlock(el) });
     }
     if (el.kind === "note" && el.placementRange) {
       a.push({
@@ -302,6 +385,21 @@ export function drawOverlay(
       onSelect: () => cb.onSetShape(el, s.open, s.close),
     }));
 
+  // ブロック種別の変更候補。現在種別は無効表示。分岐があると opt/loop は
+  // else/and を持てないため、理由を添えてグレーアウトする (非互換変更の抑止)。
+  const blockTypeActions = (el: EditableElement): MenuAction[] => {
+    const block = el.block!;
+    const hasBranches = block.branches.length > 0;
+    const branchKw = hasBranches ? block.branches[0].keyword : "";
+    return BLOCK_TYPES.map((t) => {
+      if (t.type === block.type) return { label: `${t.name} (現在)`, onSelect: () => {}, disabled: true };
+      if (hasBranches && t.type !== "alt" && t.type !== "par") {
+        return { label: t.name, onSelect: () => {}, disabled: true, note: `${branchKw} 分岐があるため変更できません` };
+      }
+      return { label: t.name, onSelect: () => cb.onSetBlockType(el, t.type) };
+    });
+  };
+
   // ノート配置の選択。選んだ後にライフライン上の高さをクリックして位置を決める。
   // 「2 者にまたがる」は相手アクターを選んでから高さを指定する。
   const noteActions = (actorId: string, hitEl: Element): MenuAction[] => {
@@ -334,8 +432,9 @@ export function drawOverlay(
     let clickTimer: number | undefined;
     hitEl.addEventListener("click", () => {
       if (pending) {
-        // pickActor 中はこの要素を送信先候補に。placeNote 中の非ライフラインは取消
+        // pickActor/pickEl 中はこの要素を候補に。placeNote 中の非ライフラインは取消
         if (pending.kind === "pickActor") resolvePick(el);
+        else if (pending.kind === "pickEl") resolvePickEl(el);
         else cancelPending();
         return;
       }
@@ -376,6 +475,11 @@ export function drawOverlay(
           const anchorId = insertionAnchor(elements, (e as MouseEvent).clientY);
           cancelPending();
           cb.onAddNote(placement, actorIds, anchorId);
+          return;
+        }
+        // その他のピック中 (pickEl 等) はライフラインを対象外とし取消する
+        if (pending) {
+          cancelPending();
           return;
         }
         const anchorId = insertionAnchor(elements, (e as MouseEvent).clientY);

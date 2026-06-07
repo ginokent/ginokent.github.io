@@ -344,11 +344,23 @@ export function correlateBlocks(
     const idx = remaining.findIndex((v) => v.text === token.label.trim());
     if (idx === -1) continue;
     const [v] = remaining.splice(idx, 1);
+    // 分岐ラベル (else/and) は SVG に描画されないため、ソース範囲を branchN フィールドとして
+    // 持たせる。既存のインライン編集機構 (onApply → buildFieldEdits) でそのまま編集できる
+    const branchFields = token.branches.map((b, i) => ({
+      name: `branch${i}`,
+      value: b.label,
+      ranges: [b.labelRange],
+    }));
     result.push({
       id: `block-${k}`,
       kind: "block",
       el: v.el,
-      fields: [{ name: "label", value: token.label, ranges: [token.labelRange] }],
+      fields: [{ name: "label", value: token.label, ranges: [token.labelRange] }, ...branchFields],
+      block: {
+        type: token.type,
+        headerStart: token.headerLineRange.start,
+        branches: token.branches.map((b) => ({ keyword: b.keyword, label: b.label })),
+      },
     });
   }
   return result;
