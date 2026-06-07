@@ -62,6 +62,7 @@ export interface OverlayCallbacks {
   onRemove(el: EditableElement): void;
   onSetShape(el: EditableElement, open: string, close: string): void;
   onSetOperator(el: EditableElement, op: string): void;
+  onReverse(el: EditableElement): void;
   onSetActivation(el: EditableElement, sign: string): void;
   onAddNote(placement: NotePlacement, actorIds: string[], anchorId: string | null): void;
   onSetNotePlacement(el: EditableElement, placement: NotePlacement, actorIds: string[]): void;
@@ -184,6 +185,7 @@ export function drawOverlay(
             ),
         });
       }
+      if (el.endpoints) a.push({ label: "矢印の向きを入れ替える", onSelect: () => cb.onReverse(el) });
       addRemove(a, el);
       return a;
     }
@@ -247,6 +249,7 @@ export function drawOverlay(
             ),
         });
       }
+      if (el.endpoints) a.push({ label: "矢印の向きを入れ替える", onSelect: () => cb.onReverse(el) });
     }
     if (el.kind === "note" && el.placementRange) {
       a.push({

@@ -165,6 +165,7 @@ export function correlateEdges(
       fields,
       removeLines: [token.statementRange],
       operatorRange: token.linkRange,
+      endpoints: { from: token.fromRefRange, to: token.toRefRange },
     });
   }
   return result;
@@ -272,6 +273,7 @@ export function correlateMessages(
       removeLines: token.removeLines,
       operatorRange: token.arrowRange,
       activationRange: token.activationRange,
+      endpoints: { from: token.fromRange, to: token.toRange },
       lineEl: v.lineEl,
     });
   }
