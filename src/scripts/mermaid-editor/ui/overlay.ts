@@ -63,7 +63,7 @@ export interface OverlayCallbacks {
   onSetShape(el: EditableElement, open: string, close: string): void;
   onSetOperator(el: EditableElement, op: string): void;
   onSetActivation(el: EditableElement, sign: string): void;
-  onAddNote(actorId: string): void;
+  onAddNote(actorId: string, anchorId: string | null): void;
 }
 
 export function drawOverlay(
@@ -87,31 +87,37 @@ export function drawOverlay(
     active = close;
   };
 
-  // 要素選択モード (エッジ追加 / 再接続 / メッセージ追加で共通)
-  let pick: { accept: (el: EditableElement) => boolean; onPick: (refId: string) => void } | null = null;
+  // 操作モード: 要素選択 (pickActor) / ノート配置 (placeNote)。
+  // Esc または枠外 (ヒット以外) のクリックで取消できる。
+  type Pending =
+    | { kind: "pickActor"; accept: (el: EditableElement) => boolean; onPick: (refId: string) => void }
+    | { kind: "placeNote"; actorId: string };
+  let pending: Pending | null = null;
   let pickSource: Element | null = null;
   let hint: HTMLElement | null = null;
+  let outsideTimer: number | undefined;
   const onPickKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") cancelPick();
+    if (e.key === "Escape") cancelPending();
   };
-  function cancelPick(): void {
-    pick = null;
+  // ヒット要素のハンドラが先に pending を処理して消すため、ここで残っていれば枠外クリック
+  const onOutsideClick = () => {
+    if (pending) cancelPending();
+  };
+  function cancelPending(): void {
+    pending = null;
     pickSource?.classList.remove("pick-source");
     pickSource = null;
     overlayEl.classList.remove("picking");
     hint?.remove();
     hint = null;
+    window.clearTimeout(outsideTimer);
     document.removeEventListener("keydown", onPickKey);
+    document.removeEventListener("click", onOutsideClick);
   }
-  const startPick = (
-    hintText: string,
-    accept: (el: EditableElement) => boolean,
-    onPick: (refId: string) => void,
-    source?: Element,
-  ) => {
+  function beginPending(p: Pending, hintText: string, source?: Element): void {
     active?.();
     active = null;
-    pick = { accept, onPick };
+    pending = p;
     pickSource = source ?? null;
     pickSource?.classList.add("pick-source");
     overlayEl.classList.add("picking");
@@ -120,6 +126,25 @@ export function drawOverlay(
     hint.textContent = hintText;
     overlayEl.append(hint);
     document.addEventListener("keydown", onPickKey);
+    // 開始のクリック自身を拾わないよう、枠外クリック検知は次のティックで登録する
+    outsideTimer = window.setTimeout(() => document.addEventListener("click", onOutsideClick), 0);
+  }
+  const startPickActor = (
+    hintText: string,
+    accept: (el: EditableElement) => boolean,
+    onPick: (refId: string) => void,
+    source?: Element,
+  ) => beginPending({ kind: "pickActor", accept, onPick }, hintText, source);
+  const startPlaceNote = (actorId: string, hintText: string, source?: Element) =>
+    beginPending({ kind: "placeNote", actorId }, hintText, source);
+
+  /** pickActor 中にクリックされた要素を送信先候補として確定/取消する */
+  const resolvePick = (el: EditableElement): void => {
+    if (pending?.kind !== "pickActor") return;
+    const ok = pending.accept(el) && el.refId !== undefined;
+    const { onPick } = pending;
+    cancelPending();
+    if (ok) onPick(el.refId!);
   };
 
   const edit = (el: EditableElement, fieldName: string, anchor: () => DOMRect) =>
@@ -137,12 +162,12 @@ export function drawOverlay(
       a.push({
         label: "接続元を変更",
         onSelect: () =>
-          startPick("新しい接続元のノードをクリック (Esc で取消)", isNode, (id) => cb.onApply(el, { from: id })),
+          startPickActor("新しい接続元のノードをクリック (Esc で取消)", isNode, (id) => cb.onApply(el, { from: id })),
       });
       a.push({
         label: "接続先を変更",
         onSelect: () =>
-          startPick("新しい接続先のノードをクリック (Esc で取消)", isNode, (id) => cb.onApply(el, { to: id })),
+          startPickActor("新しい接続先のノードをクリック (Esc で取消)", isNode, (id) => cb.onApply(el, { to: id })),
       });
       if (el.operatorRange) {
         a.push({
@@ -173,7 +198,7 @@ export function drawOverlay(
       a.push({
         label: "既存ノードへ矢印",
         onSelect: () =>
-          startPick(`${el.refId} から接続先のノードをクリック (Esc で取消)`, isNode, (to) => cb.onAddEdge(el.refId!, to), hitEl),
+          startPickActor(`${el.refId} から接続先のノードをクリック (Esc で取消)`, isNode, (to) => cb.onAddEdge(el.refId!, to), hitEl),
       });
       if (el.shapeRanges) {
         a.push({
@@ -186,9 +211,13 @@ export function drawOverlay(
       a.push({
         label: "メッセージを追加",
         onSelect: () =>
-          startPick(`${el.refId} から相手のアクター (箱か縦線) をクリック (Esc で取消)`, isActorTarget, (to) => cb.onAddMessage(el.refId!, to), hitEl),
+          startPickActor(`${el.refId} から相手のアクター (箱か縦線) をクリック (Esc で取消)`, isActorTarget, (to) => cb.onAddMessage(el.refId!, to), hitEl),
       });
-      a.push({ label: "ノートを追加", onSelect: () => cb.onAddNote(el.refId!) });
+      a.push({
+        label: "ノートを追加",
+        onSelect: () =>
+          startPlaceNote(el.refId!, `${el.refId} のノートを置く高さをライフライン上でクリック (Esc で取消)`, hitEl),
+      });
     }
     if (el.kind === "message") {
       if (el.operatorRange) {
@@ -238,11 +267,10 @@ export function drawOverlay(
   const wire = (hitEl: Element, el: EditableElement, anchor: () => DOMRect) => {
     let clickTimer: number | undefined;
     hitEl.addEventListener("click", () => {
-      if (pick) {
-        const { accept, onPick } = pick;
-        const ok = accept(el) && el.refId !== undefined;
-        cancelPick();
-        if (ok) onPick(el.refId!);
+      if (pending) {
+        // pickActor 中はこの要素を送信先候補に。placeNote 中の非ライフラインは取消
+        if (pending.kind === "pickActor") resolvePick(el);
+        else cancelPending();
         return;
       }
       window.clearTimeout(clickTimer);
@@ -252,7 +280,7 @@ export function drawOverlay(
     });
     hitEl.addEventListener("dblclick", () => {
       window.clearTimeout(clickTimer);
-      if (pick) return;
+      if (pending) return;
       if (hasLabel(el)) edit(el, "label", anchor);
     });
   };
@@ -271,16 +299,21 @@ export function drawOverlay(
       band.style.height = `${r.height}px`;
       band.title = `${from}: クリックでこの位置からメッセージを追加`;
       band.addEventListener("click", (e) => {
-        if (pick) {
-          // ピック中はこの縦線を送信先として確定する (アクターの箱と同等に扱う)
-          const { accept, onPick } = pick;
-          const ok = accept(el) && el.refId !== undefined;
-          cancelPick();
-          if (ok) onPick(el.refId!);
+        // 送信先ピック中はこの縦線を送信先として確定する (アクターの箱と同等)
+        if (pending?.kind === "pickActor") {
+          resolvePick(el);
+          return;
+        }
+        // ノート配置中はこの高さに、対象アクターのノートを挿入する
+        if (pending?.kind === "placeNote") {
+          const actorId = pending.actorId;
+          const anchorId = insertionAnchor(elements, (e as MouseEvent).clientY);
+          cancelPending();
+          cb.onAddNote(actorId, anchorId);
           return;
         }
         const anchorId = insertionAnchor(elements, (e as MouseEvent).clientY);
-        startPick(`${from} からの送信先 (アクターの箱か縦線) をクリック (Esc で取消)`, isActorTarget, (to) => cb.onInsertMessage(from, to, anchorId), band);
+        startPickActor(`${from} からの送信先 (アクターの箱か縦線) をクリック (Esc で取消)`, isActorTarget, (to) => cb.onInsertMessage(from, to, anchorId), band);
       });
       overlayEl.append(band);
       continue;

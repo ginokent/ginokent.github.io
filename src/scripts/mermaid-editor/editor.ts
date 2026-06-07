@@ -146,7 +146,7 @@ export class Editor {
       onSetShape: (el, open, close) => void this.setShape(el, open, close),
       onSetOperator: (el, op) => void this.setOperator(el, op),
       onSetActivation: (el, sign) => void this.setActivation(el, sign),
-      onAddNote: (actorId) => void this.addNote(actorId),
+      onAddNote: (actorId, anchor) => void this.addNote(actorId, anchor),
     });
   }
 
@@ -211,10 +211,20 @@ export class Editor {
    */
   async insertMessage(fromId: string, toId: string, anchorId: string | null): Promise<void> {
     if (!this.isSequence()) return;
+    await this.insertAtAnchor(`${fromId}->>${toId}: メッセージ`, anchorId);
+  }
+
+  /** 指定タイミングにノートを追加する (anchorId は insertMessage と同じ規則) */
+  async addNote(actorId: string, anchorId: string | null): Promise<void> {
+    if (!this.isSequence()) return;
+    await this.insertAtAnchor(`Note right of ${actorId}: メモ`, anchorId);
+  }
+
+  /** anchorId のメッセージ直後 (null なら先頭の前、メッセージが無ければ文末) に 1 文挿入する */
+  private async insertAtAnchor(stmt: string, anchorId: string | null): Promise<void> {
     const text = this.dom.source.value;
-    const stmt = `${fromId}->>${toId}: メッセージ`;
-    let edit: TextEdit;
     const after = anchorId ? this.elements.find((e) => e.id === anchorId)?.removeLines?.[0] : undefined;
+    let edit: TextEdit;
     if (after) {
       edit = insertStatement(text, after, "after", stmt);
     } else {
@@ -255,14 +265,6 @@ export class Editor {
   private async setActivation(el: EditableElement, sign: string): Promise<void> {
     if (!el.activationRange) return;
     await this.commitEdits([{ range: el.activationRange, newText: sign }]);
-  }
-
-  /** アクターにノートを追加する */
-  async addNote(actorId: string): Promise<void> {
-    if (!this.isSequence()) return;
-    await this.commitEdits([
-      appendStatement(this.dom.source.value, `Note right of ${actorId}: メモ`),
-    ]);
   }
 
   /** フローチャートの方向を TD→LR→RL→BT で切り替える */
