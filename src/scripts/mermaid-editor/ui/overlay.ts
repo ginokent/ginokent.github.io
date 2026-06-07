@@ -127,7 +127,8 @@ export function drawOverlay(
 
   const hasLabel = (el: EditableElement) => el.fields.some((f) => f.name === "label");
   const isNode = (el: EditableElement) => el.kind === "node";
-  const isActor = (el: EditableElement) => el.kind === "actor";
+  // メッセージの送信先は、アクターの箱でも縦線 (lifeline) でも選べる
+  const isActorTarget = (el: EditableElement) => el.kind === "actor" || el.kind === "lifeline";
 
   const actionsFor = (el: EditableElement, anchor: () => DOMRect, hitEl: Element): MenuAction[] => {
     if (el.kind === "edge") {
@@ -185,7 +186,7 @@ export function drawOverlay(
       a.push({
         label: "メッセージを追加",
         onSelect: () =>
-          startPick(`${el.refId} から相手のアクターをクリック (Esc で取消)`, isActor, (to) => cb.onAddMessage(el.refId!, to), hitEl),
+          startPick(`${el.refId} から相手のアクター (箱か縦線) をクリック (Esc で取消)`, isActorTarget, (to) => cb.onAddMessage(el.refId!, to), hitEl),
       });
       a.push({ label: "ノートを追加", onSelect: () => cb.onAddNote(el.refId!) });
     }
@@ -270,9 +271,16 @@ export function drawOverlay(
       band.style.height = `${r.height}px`;
       band.title = `${from}: クリックでこの位置からメッセージを追加`;
       band.addEventListener("click", (e) => {
-        if (pick) return;
+        if (pick) {
+          // ピック中はこの縦線を送信先として確定する (アクターの箱と同等に扱う)
+          const { accept, onPick } = pick;
+          const ok = accept(el) && el.refId !== undefined;
+          cancelPick();
+          if (ok) onPick(el.refId!);
+          return;
+        }
         const anchorId = insertionAnchor(elements, (e as MouseEvent).clientY);
-        startPick(`${from} からの送信先アクターをクリック (Esc で取消)`, isActor, (to) => cb.onInsertMessage(from, to, anchorId), band);
+        startPick(`${from} からの送信先 (アクターの箱か縦線) をクリック (Esc で取消)`, isActorTarget, (to) => cb.onInsertMessage(from, to, anchorId), band);
       });
       overlayEl.append(band);
       continue;
