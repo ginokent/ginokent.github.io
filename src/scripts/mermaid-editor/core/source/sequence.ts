@@ -35,6 +35,8 @@ interface RawActor {
 interface RawMessage {
   text: string;
   textRange: SourceRange;
+  fromRange: SourceRange;
+  toRange: SourceRange;
   arrowRange: SourceRange;
   activationRange: SourceRange;
   lineRange: SourceRange;
@@ -83,12 +85,16 @@ export function tokenizeSequence(text: string): SequenceTokens {
 
     const msg = MESSAGE_RE.exec(line);
     if (msg?.indices) {
+      const fromIdx = msg.indices[2]!;
       const arrow = msg.indices[3]!;
       const activation = msg.indices[4]!; // [+-]? 空幅の場合もある
+      const toIdx = msg.indices[5]!;
       const body = msg.indices[6]!;
       rawMessages.push({
         text: msg[6],
         textRange: abs(base, body[0], body[1]),
+        fromRange: abs(base, fromIdx[0], fromIdx[1]),
+        toRange: abs(base, toIdx[0], toIdx[1]),
         arrowRange: abs(base, arrow[0], arrow[1]),
         activationRange: abs(base, activation[0], activation[1]),
         lineRange,
@@ -111,6 +117,8 @@ export function tokenizeSequence(text: string): SequenceTokens {
   const messages: MessageToken[] = rawMessages.map((m) => ({
     text: m.text,
     textRange: m.textRange,
+    fromRange: m.fromRange,
+    toRange: m.toRange,
     arrowRange: m.arrowRange,
     activationRange: m.activationRange,
     removeLines: [m.lineRange],

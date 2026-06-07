@@ -47,8 +47,10 @@ export interface EdgeLabelToken {
 export interface EdgeToken {
   fromId: string;
   fromRange: SourceRange; // この辺における始点 ID の範囲 (再接続用)
+  fromRefRange: SourceRange; // 始点ノード参照全体 (id + 形状) の範囲 (向き反転用)
   toId: string;
   toRange: SourceRange; // この辺における終点 ID の範囲 (再接続用)
+  toRefRange: SourceRange; // 終点ノード参照全体 (id + 形状) の範囲 (向き反転用)
   index: number; // 同一 from→to の通し番号 (SVG パス L_from_to_index との対応)
   linkRange: SourceRange; // リンク演算子 (-->, -.->, ==> 等) の範囲 (線種変更用)
   statementRange: SourceRange; // 辺を含む行の範囲 (削除用)
@@ -89,6 +91,8 @@ export interface ActorToken {
 export interface MessageToken {
   text: string; // メッセージ本文
   textRange: SourceRange; // 本文のテキスト範囲
+  fromRange: SourceRange; // 送信元アクター ID の範囲 (向き反転用)
+  toRange: SourceRange; // 送信先アクター ID の範囲 (向き反転用)
   arrowRange: SourceRange; // 矢印演算子 (->>, -->>, ->, -x 等) の範囲 (種別変更用)
   activationRange: SourceRange; // 矢印と相手の間の [+-]? の範囲 (起動/終了の切替用、空幅あり)
   removeLines: SourceRange[]; // メッセージ行 (削除用)
@@ -127,5 +131,6 @@ export interface EditableElement {
   operatorRange?: SourceRange; // 演算子の範囲。線種/種別変更用 (エッジ・メッセージ)
   activationRange?: SourceRange; // [+-]? の範囲。起動/終了の切替用 (メッセージのみ)
   placementRange?: SourceRange; // 配置句の範囲。配置変更用 (ノートのみ)
+  endpoints?: { from: SourceRange; to: SourceRange }; // 始点/終点 ID の範囲。向き反転用 (エッジ・メッセージ)
   lineEl?: SVGGraphicsElement; // メッセージの矢印線。線上のクリック領域用 (メッセージのみ)
 }

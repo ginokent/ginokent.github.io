@@ -150,6 +150,7 @@ export class Editor {
       onRemove: (el) => void this.remove(el),
       onSetShape: (el, open, close) => void this.setShape(el, open, close),
       onSetOperator: (el, op) => void this.setOperator(el, op),
+      onReverse: (el) => void this.reverse(el),
       onSetActivation: (el, sign) => void this.setActivation(el, sign),
       onAddNote: (placement, actorIds, anchor) => void this.addNote(placement, actorIds, anchor),
       onSetNotePlacement: (el, placement, actorIds) => void this.setNotePlacement(el, placement, actorIds),
@@ -271,6 +272,20 @@ export class Editor {
   private async setOperator(el: EditableElement, op: string): Promise<void> {
     if (!el.operatorRange) return;
     await this.commitEdits([{ range: el.operatorRange, newText: op }]);
+  }
+
+  /** エッジ/メッセージの向きを反転する (始点と終点の参照を入れ替える) */
+  async reverse(el: EditableElement): Promise<void> {
+    if (!el.endpoints) return;
+    const { from, to } = el.endpoints;
+    const text = this.dom.source.value;
+    const fromId = text.slice(from.start, from.end);
+    const toId = text.slice(to.start, to.end);
+    if (fromId === toId) return; // 自己ループ/自己メッセージは反転不要
+    await this.commitEdits([
+      { range: from, newText: toId },
+      { range: to, newText: fromId },
+    ]);
   }
 
   /** メッセージの起動/終了 ([+-]?) を切り替える (sign は "+"/"-"/"") */
