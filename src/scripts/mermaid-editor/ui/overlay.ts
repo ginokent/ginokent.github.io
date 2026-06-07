@@ -1,4 +1,4 @@
-import type { EditableElement } from "../core/types";
+import type { EditableElement, NotePlacement } from "../core/types";
 import { openInlineEditor } from "./inline";
 import { openMenu, type MenuAction } from "./menu";
 
@@ -63,7 +63,8 @@ export interface OverlayCallbacks {
   onSetShape(el: EditableElement, open: string, close: string): void;
   onSetOperator(el: EditableElement, op: string): void;
   onSetActivation(el: EditableElement, sign: string): void;
-  onAddNote(actorId: string, anchorId: string | null): void;
+  onAddNote(placement: NotePlacement, actorIds: string[], anchorId: string | null): void;
+  onSetNotePlacement(el: EditableElement, placement: NotePlacement, actorIds: string[]): void;
 }
 
 export function drawOverlay(
@@ -91,7 +92,7 @@ export function drawOverlay(
   // Esc または枠外 (ヒット以外) のクリックで取消できる。
   type Pending =
     | { kind: "pickActor"; accept: (el: EditableElement) => boolean; onPick: (refId: string) => void }
-    | { kind: "placeNote"; actorId: string };
+    | { kind: "placeNote"; placement: NotePlacement; actorIds: string[] };
   let pending: Pending | null = null;
   let pickSource: Element | null = null;
   let hint: HTMLElement | null = null;
@@ -135,8 +136,8 @@ export function drawOverlay(
     onPick: (refId: string) => void,
     source?: Element,
   ) => beginPending({ kind: "pickActor", accept, onPick }, hintText, source);
-  const startPlaceNote = (actorId: string, hintText: string, source?: Element) =>
-    beginPending({ kind: "placeNote", actorId }, hintText, source);
+  const startPlaceNote = (placement: NotePlacement, actorIds: string[], hintText: string, source?: Element) =>
+    beginPending({ kind: "placeNote", placement, actorIds }, hintText, source);
 
   /** pickActor 中にクリックされた要素を送信先候補として確定/取消する */
   const resolvePick = (el: EditableElement): void => {
@@ -214,9 +215,8 @@ export function drawOverlay(
           startPickActor(`${el.refId} から相手のアクター (箱か縦線) をクリック (Esc で取消)`, isActorTarget, (to) => cb.onAddMessage(el.refId!, to), hitEl),
       });
       a.push({
-        label: "ノートを追加",
-        onSelect: () =>
-          startPlaceNote(el.refId!, `${el.refId} のノートを置く高さをライフライン上でクリック (Esc で取消)`, hitEl),
+        label: "ノートを追加 ▸",
+        onSelect: () => setActive(openMenu(overlayEl, anchor(), stageRect, noteActions(el.refId!, hitEl))),
       });
     }
     if (el.kind === "message") {
@@ -248,8 +248,36 @@ export function drawOverlay(
         });
       }
     }
+    if (el.kind === "note" && el.placementRange) {
+      a.push({
+        label: "配置を変更 ▸",
+        onSelect: () => setActive(openMenu(overlayEl, anchor(), stageRect, notePlacementActions(el))),
+      });
+    }
     addRemove(a, el);
     return a;
+  };
+
+  // ノートの配置変更: 配置を選び、対象アクター (箱か縦線) をクリックして確定する
+  const notePlacementActions = (el: EditableElement): MenuAction[] => {
+    const pickOne = (placement: NotePlacement) =>
+      startPickActor("ノートを置くアクター (箱か縦線) をクリック (Esc で取消)", isActorTarget, (id) =>
+        cb.onSetNotePlacement(el, placement, [id]),
+      );
+    return [
+      { label: "右側に", onSelect: () => pickOne("right") },
+      { label: "左側に", onSelect: () => pickOne("left") },
+      { label: "重ねる (1 つ)", onSelect: () => pickOne("over") },
+      {
+        label: "またぐ (2 つ) ▸",
+        onSelect: () =>
+          startPickActor("1 人目のアクター (箱か縦線) をクリック (Esc で取消)", isActorTarget, (first) =>
+            startPickActor("2 人目のアクター (箱か縦線) をクリック (Esc で取消)", isActorTarget, (second) =>
+              cb.onSetNotePlacement(el, "over", [first, second]),
+            ),
+          ),
+      },
+    ];
   };
 
   const shapeActions = (el: EditableElement): MenuAction[] =>
@@ -257,6 +285,28 @@ export function drawOverlay(
       label: s.name,
       onSelect: () => cb.onSetShape(el, s.open, s.close),
     }));
+
+  // ノート配置の選択。選んだ後にライフライン上の高さをクリックして位置を決める。
+  // 「2 者にまたがる」は相手アクターを選んでから高さを指定する。
+  const noteActions = (actorId: string, hitEl: Element): MenuAction[] => {
+    const place = (placement: NotePlacement, ids: string[], where: string) =>
+      startPlaceNote(placement, ids, `${where}のノートを置く高さをライフライン上でクリック (Esc で取消)`, hitEl);
+    return [
+      { label: "右側に", onSelect: () => place("right", [actorId], `${actorId} の右`) },
+      { label: "左側に", onSelect: () => place("left", [actorId], `${actorId} の左`) },
+      { label: "重ねる", onSelect: () => place("over", [actorId], `${actorId} 上`) },
+      {
+        label: "2 者にまたがる ▸",
+        onSelect: () =>
+          startPickActor(
+            `${actorId} とまたぐ相手のアクター (箱か縦線) をクリック (Esc で取消)`,
+            isActorTarget,
+            (other) => place("over", [actorId, other], `${actorId},${other}`),
+            hitEl,
+          ),
+      },
+    ];
+  };
 
   function addRemove(actions: MenuAction[], el: EditableElement): void {
     if (el.removeLines && el.removeLines.length > 0) {
@@ -304,12 +354,12 @@ export function drawOverlay(
           resolvePick(el);
           return;
         }
-        // ノート配置中はこの高さに、対象アクターのノートを挿入する
+        // ノート配置中はこの高さに、選んだ配置のノートを挿入する
         if (pending?.kind === "placeNote") {
-          const actorId = pending.actorId;
+          const { placement, actorIds } = pending;
           const anchorId = insertionAnchor(elements, (e as MouseEvent).clientY);
           cancelPending();
-          cb.onAddNote(actorId, anchorId);
+          cb.onAddNote(placement, actorIds, anchorId);
           return;
         }
         const anchorId = insertionAnchor(elements, (e as MouseEvent).clientY);

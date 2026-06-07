@@ -308,6 +308,7 @@ export function correlateNotes(
       el: v.el,
       fields: [{ name: "label", value: token.text, ranges: [token.textRange] }],
       removeLines: token.removeLines,
+      placementRange: token.placementRange,
     });
   }
   return result;

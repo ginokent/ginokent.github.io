@@ -1,5 +1,8 @@
 // 三位一体モデル (意味 / 視覚 / ソース) を統合した編集用の型定義
 
+/** ノートの配置種別 (mermaid の Note 構文に対応) */
+export type NotePlacement = "left" | "right" | "over";
+
 /** テキスト上の半開区間 [start, end) を文字オフセットで表す */
 export interface SourceRange {
   start: number; // 開始オフセット (0 始まり)
@@ -95,6 +98,7 @@ export interface MessageToken {
 export interface NoteToken {
   text: string; // ノート本文
   textRange: SourceRange; // 本文のテキスト範囲
+  placementRange: SourceRange; // 配置句 (over X,Y / right of X 等) の範囲 (配置変更用)
   removeLines: SourceRange[]; // ノート行 (削除用)
 }
 
@@ -122,5 +126,6 @@ export interface EditableElement {
   shapeRanges?: { open: SourceRange; close: SourceRange }; // 形状変更用 (ノードのみ)
   operatorRange?: SourceRange; // 演算子の範囲。線種/種別変更用 (エッジ・メッセージ)
   activationRange?: SourceRange; // [+-]? の範囲。起動/終了の切替用 (メッセージのみ)
+  placementRange?: SourceRange; // 配置句の範囲。配置変更用 (ノートのみ)
   lineEl?: SVGGraphicsElement; // メッセージの矢印線。線上のクリック領域用 (メッセージのみ)
 }
