@@ -1,0 +1,356 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Mermaid Editor"
+  description="Mermaid 図をブラウザ上でグラフィカルに編集し、元の整形を保持したまま Mermaid 記法へ書き戻すツール。処理はすべてブラウザ内で完結します。"
+  lang="ja"
+  canonicalPath="/tools/mermaid-editor"
+>
+  <!--
+    mermaid-editor リポジトリの index.html (body) を移植したマークアップ。
+    サイト全体の <body>/<header>/<main> は BaseLayout が持つため、
+    エディタ独自のそれらの殻は外し、.mermaid-editor コンテナへ閉じ込めている。
+    ロジックは src/scripts/mermaid-editor/ (上流から無改変同期) を参照する。
+  -->
+  <article class="mermaid-editor">
+    <header class="me-header">
+      <h1>Mermaid Editor</h1>
+      <p>要素をクリックでメニュー、ダブルクリックでラベルを直接編集 (戦略 B: 範囲保持書き戻し)</p>
+    </header>
+    <div class="me-panes">
+      <!-- 左: Mermaid テキスト (正本) -->
+      <section class="pane">
+        <h2>Mermaid テキスト</h2>
+        <textarea id="source" spellcheck="false"></textarea>
+      </section>
+      <!-- 右: レンダリング図 + オーバーレイ編集層 -->
+      <section class="pane">
+        <div class="pane-head">
+          <h2>図 (クリック: メニュー / ダブルクリック: ラベル)</h2>
+          <div class="toolbar">
+            <button id="add-element" type="button" title="要素を追加 (flowchart: ノード / sequence: 参加者)">＋ 追加</button>
+            <button id="direction" type="button" title="方向を切替 (flowchart: TD→LR→RL→BT)">⟲ 向き</button>
+            <button id="undo" type="button" title="元に戻す (Ctrl/Cmd+Z)">↶ Undo</button>
+            <button id="redo" type="button" title="やり直す (Ctrl/Cmd+Shift+Z)">↷ Redo</button>
+            <span class="toolbar-sep"></span>
+            <button id="copy-code" type="button" title="mermaid コードをコピー">⧉ コピー</button>
+            <button id="export-svg" type="button" title="SVG を書き出す">SVG</button>
+            <button id="export-png" type="button" title="PNG を書き出す">PNG</button>
+            <button id="share-url" type="button" title="共有 URL をコピー">🔗 共有</button>
+            <span class="toolbar-sep"></span>
+            <span class="toolbar-label">テンプレート:</span>
+            <span id="templates" class="templates"></span>
+          </div>
+        </div>
+        <div id="error" class="error" hidden></div>
+        <div id="stage">
+          <div id="diagram"></div>
+          <div id="overlay"></div>
+        </div>
+      </section>
+    </div>
+  </article>
+</BaseLayout>
+
+<script>
+  // mermaid-editor/src/main.ts を移植したエントリ。ロジックは上流から無改変同期した
+  // モジュールを参照し、CSS はこのページの <style> 側で扱うため style.css の import は外す。
+  import { Editor } from '../../scripts/mermaid-editor/editor';
+  import { load } from '../../scripts/mermaid-editor/core/persist';
+  import { TEMPLATES } from '../../scripts/mermaid-editor/core/templates';
+
+  const $ = <T extends HTMLElement>(id: string): T => {
+    const el = document.getElementById(id);
+    if (!el) throw new Error(`element #${id} not found`);
+    return el as T;
+  };
+
+  const editor = new Editor({
+    source: $<HTMLTextAreaElement>('source'),
+    diagram: $('diagram'),
+    overlay: $('overlay'),
+    stage: $('stage'),
+    error: $('error'),
+  });
+
+  $('add-element').addEventListener('click', () => void editor.addElement());
+  $('direction').addEventListener('click', () => void editor.cycleDirection());
+  $('undo').addEventListener('click', () => void editor.undo());
+  $('redo').addEventListener('click', () => void editor.redo());
+
+  const copyBtn = $('copy-code');
+  copyBtn.addEventListener('click', async () => {
+    const ok = await editor.copyCode();
+    const original = copyBtn.textContent;
+    copyBtn.textContent = ok ? 'コピーしました' : 'コピー失敗';
+    window.setTimeout(() => (copyBtn.textContent = original), 1200);
+  });
+  $('export-svg').addEventListener('click', () => editor.saveSvg());
+  $('export-png').addEventListener('click', () => void editor.savePng());
+
+  const shareBtn = $('share-url');
+  shareBtn.addEventListener('click', async () => {
+    const original = shareBtn.textContent;
+    try {
+      await navigator.clipboard.writeText(location.href);
+      shareBtn.textContent = 'URL をコピー';
+    } catch {
+      shareBtn.textContent = 'コピー失敗';
+    }
+    window.setTimeout(() => (shareBtn.textContent = original), 1200);
+  });
+
+  // テンプレートボタン: 確認の上で全文を置換する (置換は Undo で戻せる)
+  const templatesEl = $('templates');
+  for (const t of TEMPLATES) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = t.label;
+    btn.title = `${t.label} のテンプレートで全文を置換`;
+    btn.addEventListener('click', () => {
+      if (window.confirm(`「${t.label}」のテンプレートで置換しますか？\n現在の内容は失われます (Undo で戻せます)`)) {
+        void editor.replaceAll(t.text);
+      }
+    });
+    templatesEl.append(btn);
+  }
+
+  // URL ハッシュ / localStorage に保存があれば復元、無ければ既定テンプレート
+  void editor.setText(load() ?? TEMPLATES[0].text);
+</script>
+
+<style is:global>
+  /*
+    mermaid-editor/src/style.css を移植し、サイト全体 (BaseLayout) との衝突を避けるため
+    すべてのセレクタを .mermaid-editor 配下へ再スコープしたもの。
+    上流の裸セレクタ body / header h1 / header p / main は衝突するため、それぞれ
+    破棄 (body) ・コンテナ配下 (header→.me-header, main→.me-panes) へ置換している。
+    .hit / .menu / .inline-input 等は overlay.ts が実行時に動的生成する要素のため
+    Astro の scoped style では当たらない。ゆえに is:global で global に置く必要がある。
+    エディタは light テーマ前提の自己完結ウィジェットとして色を固定し、サイトの
+    dark テーマでも内部の可読性を保つ。
+  */
+  .mermaid-editor {
+    font-family: system-ui, sans-serif;
+    color: #1a1a1a;
+  }
+
+  .mermaid-editor .me-header h1 {
+    margin: 0 0 0.25rem;
+    font-size: 1.25rem;
+  }
+
+  .mermaid-editor .me-header p {
+    margin: 0 0 1rem;
+    color: #555;
+    font-size: 0.85rem;
+  }
+
+  .mermaid-editor .me-panes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .mermaid-editor .pane h2 {
+    font-size: 0.9rem;
+    margin: 0 0 0.5rem;
+  }
+
+  .mermaid-editor .pane-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .mermaid-editor .toolbar {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .mermaid-editor .toolbar button {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.6rem;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background: #fff;
+    color: #1a1a1a;
+    cursor: pointer;
+  }
+
+  .mermaid-editor .toolbar button:hover {
+    background: #f1f5f9;
+  }
+
+  .mermaid-editor .toolbar-sep {
+    width: 1px;
+    align-self: stretch;
+    background: #e2e8f0;
+    margin: 0 0.15rem;
+  }
+
+  .mermaid-editor .toolbar-label {
+    align-self: center;
+    font-size: 0.8rem;
+    color: #64748b;
+  }
+
+  .mermaid-editor .templates {
+    display: inline-flex;
+    gap: 0.35rem;
+  }
+
+  .mermaid-editor #source {
+    width: 100%;
+    height: 360px;
+    box-sizing: border-box;
+    font-family: ui-monospace, monospace;
+    font-size: 0.9rem;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    resize: vertical;
+    background: #fff;
+    color: #1a1a1a;
+  }
+
+  /* 構文エラー表示 */
+  .mermaid-editor .error {
+    margin-bottom: 0.5rem;
+    padding: 0.5rem 0.7rem;
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    border-radius: 6px;
+    color: #b91c1c;
+    font-family: ui-monospace, monospace;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    max-height: 8rem;
+    overflow: auto;
+  }
+
+  /* 図とオーバーレイの基準コンテナ */
+  .mermaid-editor #stage {
+    position: relative;
+    border: 1px solid #eee;
+    border-radius: 6px;
+    padding: 0.5rem;
+    overflow: auto;
+    background: #fff;
+  }
+
+  .mermaid-editor #overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none; /* 子のヒット領域のみ受け取る */
+  }
+
+  /* 編集可能ノードのヒット領域 */
+  .mermaid-editor .hit {
+    position: absolute;
+    pointer-events: auto;
+    cursor: pointer;
+    border: 1.5px dashed transparent;
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
+
+  .mermaid-editor .hit:hover {
+    border-color: #2563eb;
+    background: rgba(37, 99, 235, 0.08);
+  }
+
+  /* メッセージ矢印のクリック帯: ホバーで矢印を青い半透明バンドで包む */
+  .mermaid-editor .msg-line-hit {
+    border: none;
+  }
+  .mermaid-editor .msg-line-hit:hover {
+    border: none;
+    background: rgba(37, 99, 235, 0.25);
+  }
+
+  /* エッジのクリック用太線 (透明、ホバーで薄く可視化) */
+  .mermaid-editor .edge-hit {
+    pointer-events: stroke;
+    cursor: pointer;
+  }
+
+  .mermaid-editor .edge-hit:hover {
+    stroke: rgba(37, 99, 235, 0.25) !important;
+  }
+
+  /* ノード選択モード: 対象を選ぶカーソルと始点の強調 */
+  .mermaid-editor #overlay.picking .hit {
+    cursor: crosshair;
+  }
+
+  .mermaid-editor .hit.pick-source {
+    border-color: #16a34a;
+    background: rgba(22, 163, 74, 0.12);
+  }
+
+  .mermaid-editor .pick-hint {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    pointer-events: none;
+    background: #16a34a;
+    color: #fff;
+    font-size: 0.8rem;
+    padding: 0.25rem 0.7rem;
+    border-radius: 999px;
+    white-space: nowrap;
+    z-index: 30;
+  }
+
+  /* コンテキストメニュー */
+  .mermaid-editor .menu {
+    position: absolute;
+    pointer-events: auto; /* overlay の pointer-events:none 継承を打ち消す */
+    z-index: 20;
+    min-width: 140px;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+    padding: 0.25rem;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mermaid-editor .menu-item {
+    text-align: left;
+    font-size: 0.85rem;
+    padding: 0.35rem 0.6rem;
+    border: none;
+    background: transparent;
+    color: #1a1a1a;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+
+  .mermaid-editor .menu-item:hover {
+    background: #eff6ff;
+  }
+
+  /* インライン編集の入力欄 */
+  .mermaid-editor .inline-input {
+    position: absolute;
+    pointer-events: auto; /* overlay の pointer-events:none 継承を打ち消す */
+    z-index: 25;
+    box-sizing: border-box;
+    text-align: center;
+    font-size: 0.85rem;
+    border: 1.5px solid #2563eb;
+    border-radius: 4px;
+    padding: 0 2px;
+    background: #fff;
+    color: #1a1a1a;
+  }
+</style>

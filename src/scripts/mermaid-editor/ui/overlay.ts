@@ -1,0 +1,323 @@
+import type { EditableElement } from "../core/types";
+import { openInlineEditor } from "./inline";
+import { openMenu, type MenuAction } from "./menu";
+
+// オーバーレイ層: SVG の上に当たり判定を重ねる。
+//   - ノード等  : HTML の透明 div ヒット
+//   - エッジ    : SVG 上に重ねる透明で太いパス (線全体をクリックしやすく)
+// 操作:
+//   - シングルクリック → メニュー
+//   - ダブルクリック   → ラベルを直接インライン編集
+//   - ノード選択モード → 対象ノードのクリックで確定 (エッジ追加 / 再接続)
+
+const SVGNS = "http://www.w3.org/2000/svg";
+const DBLCLICK_DELAY = 220; // ms
+const EDGE_HIT_WIDTH = 16; // エッジのクリック可能領域の太さ (SVG ユーザー単位)
+const MSG_BAND_PX = 18; // メッセージ矢印のクリック帯の太さ (画面ピクセル)
+
+const FIELD_LABELS: Record<string, string> = {
+  label: "ラベル",
+  id: "ID",
+};
+
+/** ノード形状の候補 (名前 → 括弧) */
+const SHAPE_CHOICES: ReadonlyArray<{ name: string; open: string; close: string }> = [
+  { name: "矩形", open: "[", close: "]" },
+  { name: "角丸", open: "(", close: ")" },
+  { name: "スタジアム", open: "([", close: "])" },
+  { name: "円", open: "((", close: "))" },
+  { name: "ひし形", open: "{", close: "}" },
+  { name: "六角形", open: "{{", close: "}}" },
+  { name: "サブルーチン", open: "[[", close: "]]" },
+  { name: "円柱", open: "[(", close: ")]" },
+];
+
+/** エッジの線種候補 (名前 → リンク演算子) */
+const EDGE_TYPES: ReadonlyArray<{ name: string; op: string }> = [
+  { name: "実線矢印", op: "-->" },
+  { name: "点線矢印", op: "-.->" },
+  { name: "太線矢印", op: "==>" },
+  { name: "実線 (矢印なし)", op: "---" },
+  { name: "終端 x", op: "--x" },
+  { name: "終端 o", op: "--o" },
+];
+
+/** メッセージの矢印種別候補 (名前 → 矢印演算子) */
+const MESSAGE_ARROWS: ReadonlyArray<{ name: string; op: string }> = [
+  { name: "実線矢印", op: "->>" },
+  { name: "点線矢印", op: "-->>" },
+  { name: "実線 (矢印なし)", op: "->" },
+  { name: "点線 (矢印なし)", op: "-->" },
+  { name: "終端 x", op: "-x" },
+  { name: "非同期 )", op: "-)" },
+];
+
+export interface OverlayCallbacks {
+  onApply(el: EditableElement, changes: Record<string, string>): void;
+  onAddEdge(fromId: string, toId: string): void;
+  onAddConnectedNode(fromId: string): void;
+  onAddMessage(fromId: string, toId: string): void;
+  onRemove(el: EditableElement): void;
+  onSetShape(el: EditableElement, open: string, close: string): void;
+  onSetOperator(el: EditableElement, op: string): void;
+  onSetActivation(el: EditableElement, sign: string): void;
+  onAddNote(actorId: string): void;
+}
+
+export function drawOverlay(
+  overlayEl: HTMLElement,
+  stageEl: HTMLElement,
+  elements: readonly EditableElement[],
+  cb: OverlayCallbacks,
+): void {
+  overlayEl.replaceChildren();
+  const stageRect = stageEl.getBoundingClientRect();
+  // ヒット div は overlay の子なので、overlay 自身の矩形を原点に配置する。
+  // stage には border/padding があり、overlay は (inset:0 で) stage のパディングボックスを
+  // 基準にするため、stage の矩形基準だと border 分 (1px) 右下へずれてしまう。
+  const overlayRect = overlayEl.getBoundingClientRect();
+  const svg = stageEl.querySelector("svg");
+
+  // 開いているメニュー / 入力欄は 1 つに限定する
+  let active: (() => void) | null = null;
+  const setActive = (close: () => void) => {
+    active?.();
+    active = close;
+  };
+
+  // 要素選択モード (エッジ追加 / 再接続 / メッセージ追加で共通)
+  let pick: { accept: (el: EditableElement) => boolean; onPick: (refId: string) => void } | null = null;
+  let pickSource: Element | null = null;
+  let hint: HTMLElement | null = null;
+  const onPickKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") cancelPick();
+  };
+  function cancelPick(): void {
+    pick = null;
+    pickSource?.classList.remove("pick-source");
+    pickSource = null;
+    overlayEl.classList.remove("picking");
+    hint?.remove();
+    hint = null;
+    document.removeEventListener("keydown", onPickKey);
+  }
+  const startPick = (
+    hintText: string,
+    accept: (el: EditableElement) => boolean,
+    onPick: (refId: string) => void,
+    source?: Element,
+  ) => {
+    active?.();
+    active = null;
+    pick = { accept, onPick };
+    pickSource = source ?? null;
+    pickSource?.classList.add("pick-source");
+    overlayEl.classList.add("picking");
+    hint = document.createElement("div");
+    hint.className = "pick-hint";
+    hint.textContent = hintText;
+    overlayEl.append(hint);
+    document.addEventListener("keydown", onPickKey);
+  };
+
+  const edit = (el: EditableElement, fieldName: string, anchor: () => DOMRect) =>
+    setActive(openInlineEditor(overlayEl, anchor(), stageRect, el, fieldName, cb));
+
+  const hasLabel = (el: EditableElement) => el.fields.some((f) => f.name === "label");
+  const isNode = (el: EditableElement) => el.kind === "node";
+  const isActor = (el: EditableElement) => el.kind === "actor";
+
+  const actionsFor = (el: EditableElement, anchor: () => DOMRect, hitEl: Element): MenuAction[] => {
+    if (el.kind === "edge") {
+      const a: MenuAction[] = [];
+      if (hasLabel(el)) a.push({ label: "ラベルを編集", onSelect: () => edit(el, "label", anchor) });
+      a.push({
+        label: "接続元を変更",
+        onSelect: () =>
+          startPick("新しい接続元のノードをクリック (Esc で取消)", isNode, (id) => cb.onApply(el, { from: id })),
+      });
+      a.push({
+        label: "接続先を変更",
+        onSelect: () =>
+          startPick("新しい接続先のノードをクリック (Esc で取消)", isNode, (id) => cb.onApply(el, { to: id })),
+      });
+      if (el.operatorRange) {
+        a.push({
+          label: "線種を変更 ▸",
+          onSelect: () =>
+            setActive(
+              openMenu(
+                overlayEl,
+                anchor(),
+                stageRect,
+                EDGE_TYPES.map((t) => ({ label: t.name, onSelect: () => cb.onSetOperator(el, t.op) })),
+              ),
+            ),
+        });
+      }
+      addRemove(a, el);
+      return a;
+    }
+    const a: MenuAction[] = el.fields.map((f) => ({
+      label: `${FIELD_LABELS[f.name] ?? f.name}を編集`,
+      onSelect: () => edit(el, f.name, anchor),
+    }));
+    if (el.kind === "node") {
+      a.push({
+        label: "新規ノードへ矢印",
+        onSelect: () => cb.onAddConnectedNode(el.refId!),
+      });
+      a.push({
+        label: "既存ノードへ矢印",
+        onSelect: () =>
+          startPick(`${el.refId} から接続先のノードをクリック (Esc で取消)`, isNode, (to) => cb.onAddEdge(el.refId!, to), hitEl),
+      });
+      if (el.shapeRanges) {
+        a.push({
+          label: "形状を変更 ▸",
+          onSelect: () => setActive(openMenu(overlayEl, anchor(), stageRect, shapeActions(el))),
+        });
+      }
+    }
+    if (el.kind === "actor" && el.refId) {
+      a.push({
+        label: "メッセージを追加",
+        onSelect: () =>
+          startPick(`${el.refId} から相手のアクターをクリック (Esc で取消)`, isActor, (to) => cb.onAddMessage(el.refId!, to), hitEl),
+      });
+      a.push({ label: "ノートを追加", onSelect: () => cb.onAddNote(el.refId!) });
+    }
+    if (el.kind === "message") {
+      if (el.operatorRange) {
+        a.push({
+          label: "種別を変更 ▸",
+          onSelect: () =>
+            setActive(
+              openMenu(
+                overlayEl,
+                anchor(),
+                stageRect,
+                MESSAGE_ARROWS.map((t) => ({ label: t.name, onSelect: () => cb.onSetOperator(el, t.op) })),
+              ),
+            ),
+        });
+      }
+      if (el.activationRange) {
+        a.push({
+          label: "アクティベーション ▸",
+          onSelect: () =>
+            setActive(
+              openMenu(overlayEl, anchor(), stageRect, [
+                { label: "対象を起動 (+)", onSelect: () => cb.onSetActivation(el, "+") },
+                { label: "対象を終了 (−)", onSelect: () => cb.onSetActivation(el, "-") },
+                { label: "起動/終了を解除", onSelect: () => cb.onSetActivation(el, "") },
+              ]),
+            ),
+        });
+      }
+    }
+    addRemove(a, el);
+    return a;
+  };
+
+  const shapeActions = (el: EditableElement): MenuAction[] =>
+    SHAPE_CHOICES.map((s) => ({
+      label: s.name,
+      onSelect: () => cb.onSetShape(el, s.open, s.close),
+    }));
+
+  function addRemove(actions: MenuAction[], el: EditableElement): void {
+    if (el.removeLines && el.removeLines.length > 0) {
+      actions.push({ label: "削除", onSelect: () => cb.onRemove(el) });
+    }
+  }
+
+  const wire = (hitEl: Element, el: EditableElement, anchor: () => DOMRect) => {
+    let clickTimer: number | undefined;
+    hitEl.addEventListener("click", () => {
+      if (pick) {
+        const { accept, onPick } = pick;
+        const ok = accept(el) && el.refId !== undefined;
+        cancelPick();
+        if (ok) onPick(el.refId!);
+        return;
+      }
+      window.clearTimeout(clickTimer);
+      clickTimer = window.setTimeout(() => {
+        setActive(openMenu(overlayEl, anchor(), stageRect, actionsFor(el, anchor, hitEl)));
+      }, DBLCLICK_DELAY);
+    });
+    hitEl.addEventListener("dblclick", () => {
+      window.clearTimeout(clickTimer);
+      if (pick) return;
+      if (hasLabel(el)) edit(el, "label", anchor);
+    });
+  };
+
+  for (const el of elements) {
+    if (el.fields.length === 0) continue; // 編集不可要素はスキップ
+
+    if (el.kind === "edge") {
+      if (!svg) continue;
+      const hit = makeEdgeHit(el.el);
+      svg.append(hit);
+      wire(hit, el, () => midpointClientRect(el.el));
+      continue;
+    }
+
+    // メッセージは矢印線にもクリック領域を張る (ラベルだけでなく線をクリックできる)。
+    // 矢印はほぼ水平なので、画面座標で一定の太さの半透明バンドをオーバーレイ層に重ねる
+    // (図の縮小率に依らず確実に太く見え、フローチャートのエッジと同等の操作感になる)。
+    if (el.kind === "message" && el.lineEl) {
+      const r = el.lineEl.getBoundingClientRect();
+      const band = document.createElement("div");
+      band.className = "hit msg-line-hit";
+      band.style.left = `${r.left - overlayRect.left}px`;
+      band.style.top = `${r.top + r.height / 2 - MSG_BAND_PX / 2 - overlayRect.top}px`;
+      band.style.width = `${r.width}px`;
+      band.style.height = `${MSG_BAND_PX}px`;
+      band.title = `${el.id}: クリックでメニュー`;
+      overlayEl.append(band);
+      wire(band, el, () => el.lineEl!.getBoundingClientRect());
+    }
+
+    const rect = el.el.getBoundingClientRect();
+    const hit = document.createElement("div");
+    hit.className = "hit";
+    hit.style.left = `${rect.left - overlayRect.left}px`;
+    hit.style.top = `${rect.top - overlayRect.top}px`;
+    hit.style.width = `${rect.width}px`;
+    hit.style.height = `${rect.height}px`;
+    hit.title = `${el.id}: クリックでメニュー / ダブルクリックでラベル編集`;
+    overlayEl.append(hit);
+    wire(hit, el, () => el.el.getBoundingClientRect());
+  }
+}
+
+/** エッジパスに重ねる、透明で太いクリック用パスを作る */
+function makeEdgeHit(path: SVGGraphicsElement): SVGPathElement {
+  const hit = document.createElementNS(SVGNS, "path");
+  hit.setAttribute("d", path.getAttribute("d") ?? "");
+  hit.setAttribute("fill", "none");
+  hit.setAttribute("stroke", "transparent");
+  hit.setAttribute("stroke-width", String(EDGE_HIT_WIDTH));
+  hit.setAttribute("stroke-linecap", "round");
+  hit.classList.add("edge-hit");
+  return hit;
+}
+
+/** パスの中点をビューポート座標の (幅 0 の) 矩形として返す */
+function midpointClientRect(path: SVGGraphicsElement): DOMRect {
+  const geom = path as SVGPathElement;
+  try {
+    const p = geom.getPointAtLength(geom.getTotalLength() / 2);
+    const ctm = geom.getScreenCTM();
+    if (ctm) {
+      const dp = new DOMPoint(p.x, p.y).matrixTransform(ctm);
+      return new DOMRect(dp.x, dp.y, 0, 0);
+    }
+  } catch {
+    // getPointAtLength 非対応時は外接矩形で代用
+  }
+  return path.getBoundingClientRect();
+}
