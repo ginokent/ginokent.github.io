@@ -12,7 +12,7 @@ import {
   freshNodeId,
   insertStatement,
 } from "./core/structure";
-import type { EditableElement, NotePlacement, SourceRange, TextEdit } from "./core/types";
+import { hasActivationMarker, type EditableElement, type NotePlacement, type SourceRange, type TextEdit } from "./core/types";
 import { drawOverlay } from "./ui/overlay";
 
 // オーケストレータ: テキスト (正本) を中心に 3 モデルを再構築し、
@@ -277,6 +277,9 @@ export class Editor {
   /** エッジ/メッセージの向きを反転する (始点と終点の参照を入れ替える) */
   async reverse(el: EditableElement): Promise<void> {
     if (!el.endpoints) return;
+    // 活性化マーカー付きは反転不可 (mermaid の活性化対応が崩れて不正になる)。
+    // UI 側でもグレーアウトしているが、防御的にここでも弾く
+    if (hasActivationMarker(el)) return;
     const { from, to } = el.endpoints;
     const text = this.dom.source.value;
     const fromId = text.slice(from.start, from.end);

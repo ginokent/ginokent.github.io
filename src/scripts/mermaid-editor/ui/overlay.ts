@@ -1,4 +1,4 @@
-import type { EditableElement, NotePlacement } from "../core/types";
+import { hasActivationMarker, type EditableElement, type NotePlacement } from "../core/types";
 import { openInlineEditor } from "./inline";
 import { openMenu, type MenuAction } from "./menu";
 
@@ -249,7 +249,20 @@ export function drawOverlay(
             ),
         });
       }
-      if (el.endpoints) a.push({ label: "矢印の向きを入れ替える", onSelect: () => cb.onReverse(el) });
+      if (el.endpoints) {
+        // 活性化マーカー ([+-]) 付きは反転すると活性化/非活性化の対応が崩れて
+        // mermaid が不正になるため、グレーアウトして理由をツールチップで示す
+        a.push(
+          hasActivationMarker(el)
+            ? {
+                label: "矢印の向きを入れ替える",
+                onSelect: () => {},
+                disabled: true,
+                note: "活性化マーカー (+/-) 付きは反転できません",
+              }
+            : { label: "矢印の向きを入れ替える", onSelect: () => cb.onReverse(el) },
+        );
+      }
     }
     if (el.kind === "note" && el.placementRange) {
       a.push({
