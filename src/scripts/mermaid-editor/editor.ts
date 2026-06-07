@@ -12,11 +12,16 @@ import {
   freshNodeId,
   insertStatement,
 } from "./core/structure";
-import type { EditableElement, SourceRange, TextEdit } from "./core/types";
+import type { EditableElement, NotePlacement, SourceRange, TextEdit } from "./core/types";
 import { drawOverlay } from "./ui/overlay";
 
 // オーケストレータ: テキスト (正本) を中心に 3 モデルを再構築し、
 // 編集を surgical に書き戻す。編集履歴は History で一元管理する。
+
+/** ノートの配置句を組み立てる (over X,Y / right of X / left of X) */
+function noteHead(placement: NotePlacement, actorIds: string[]): string {
+  return placement === "over" ? `over ${actorIds.join(",")}` : `${placement} of ${actorIds[0]}`;
+}
 
 export interface EditorElements {
   source: HTMLTextAreaElement; // 正本テキスト
@@ -146,7 +151,8 @@ export class Editor {
       onSetShape: (el, open, close) => void this.setShape(el, open, close),
       onSetOperator: (el, op) => void this.setOperator(el, op),
       onSetActivation: (el, sign) => void this.setActivation(el, sign),
-      onAddNote: (actorId, anchor) => void this.addNote(actorId, anchor),
+      onAddNote: (placement, actorIds, anchor) => void this.addNote(placement, actorIds, anchor),
+      onSetNotePlacement: (el, placement, actorIds) => void this.setNotePlacement(el, placement, actorIds),
     });
   }
 
@@ -214,10 +220,16 @@ export class Editor {
     await this.insertAtAnchor(`${fromId}->>${toId}: メッセージ`, anchorId);
   }
 
-  /** 指定タイミングにノートを追加する (anchorId は insertMessage と同じ規則) */
-  async addNote(actorId: string, anchorId: string | null): Promise<void> {
-    if (!this.isSequence()) return;
-    await this.insertAtAnchor(`Note right of ${actorId}: メモ`, anchorId);
+  /** 指定タイミングにノートを追加する (placement と actorIds で配置を決める) */
+  async addNote(placement: NotePlacement, actorIds: string[], anchorId: string | null): Promise<void> {
+    if (!this.isSequence() || actorIds.length === 0) return;
+    await this.insertAtAnchor(`Note ${noteHead(placement, actorIds)}: メモ`, anchorId);
+  }
+
+  /** 既存ノートの配置句 (over X,Y / right of X 等) を置換する */
+  async setNotePlacement(el: EditableElement, placement: NotePlacement, actorIds: string[]): Promise<void> {
+    if (!el.placementRange || actorIds.length === 0) return;
+    await this.commitEdits([{ range: el.placementRange, newText: noteHead(placement, actorIds) }]);
   }
 
   /** anchorId のメッセージ直後 (null なら先頭の前、メッセージが無ければ文末) に 1 文挿入する */

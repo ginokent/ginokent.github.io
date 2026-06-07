@@ -14,7 +14,8 @@ const ACTOR_RE = /^(\s*)(?:participant|actor)\s+(\w+)\s+as\s+(.+?)\s*$/d;
 // <from> <arrow> [+-]? <to> : <text>   (arrow = -/-- + >|>>|x|) )
 const MESSAGE_RE = /^(\s*)(\w+)\s*(--?(?:>>?|x|\)))\s*([+-]?)(\w+)\s*:\s*(.+?)\s*$/d;
 // Note over A[,B] : text  /  Note (right|left) of A : text
-const NOTE_RE = /^(\s*)[Nn]ote\s+(?:over\s+\w+(?:\s*,\s*\w+)?|(?:right|left)\s+of\s+\w+)\s*:\s*(.+?)\s*$/d;
+// group2 = 配置句 (over A,B / right of A 等)、group3 = 本文
+const NOTE_RE = /^(\s*)[Nn]ote\s+(over\s+\w+(?:\s*,\s*\w+)?|(?:right|left)\s+of\s+\w+)\s*:\s*(.+?)\s*$/d;
 // loop/alt/opt/par <label>
 const BLOCK_RE = /^(\s*)(?:loop|alt|opt|par)\s+(.+?)\s*$/d;
 
@@ -62,8 +63,14 @@ export function tokenizeSequence(text: string): SequenceTokens {
 
     const note = NOTE_RE.exec(line);
     if (note?.indices) {
-      const [start, end] = note.indices[2]!; // 本文グループ
-      notes.push({ text: note[2], textRange: abs(base, start, end), removeLines: [lineRange] });
+      const p = note.indices[2]!; // 配置句
+      const t = note.indices[3]!; // 本文
+      notes.push({
+        text: note[3],
+        textRange: abs(base, t[0], t[1]),
+        placementRange: abs(base, p[0], p[1]),
+        removeLines: [lineRange],
+      });
       continue;
     }
 
