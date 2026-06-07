@@ -362,6 +362,24 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     background: #eff6ff;
   }
 
+  /* 無効な項目: 操作不可であることを色とカーソルで示す (理由は note を常時表示) */
+  .mermaid-editor .menu-item--disabled {
+    color: #9ca3af;
+    cursor: not-allowed;
+  }
+
+  .mermaid-editor .menu-item--disabled:hover {
+    background: transparent;
+  }
+
+  /* ラベル下の補足。無効化の理由などをスマホでも見えるよう常時表示する */
+  .mermaid-editor .menu-item__note {
+    display: block;
+    font-size: 0.7rem;
+    color: #9ca3af;
+    margin-top: 0.1rem;
+  }
+
   /* インライン編集の入力欄 */
   .mermaid-editor .inline-input {
     position: absolute;

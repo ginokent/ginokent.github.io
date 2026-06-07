@@ -134,3 +134,13 @@ export interface EditableElement {
   endpoints?: { from: SourceRange; to: SourceRange }; // 始点/終点 ID の範囲。向き反転用 (エッジ・メッセージ)
   lineEl?: SVGGraphicsElement; // メッセージの矢印線。線上のクリック領域用 (メッセージのみ)
 }
+
+/**
+ * メッセージに活性化マーカー ([+-]) が付いているか判定する。
+ * activationRange は [+-]? の範囲で、マーカー無しのときは空幅 (start === end) になる。
+ * 活性化マーカー付きメッセージを反転すると活性化/非活性化の対応が崩れて
+ * mermaid が不正になるため、反転の可否判定に用いる。
+ */
+export function hasActivationMarker(el: EditableElement): boolean {
+  return !!el.activationRange && el.activationRange.start !== el.activationRange.end;
+}

@@ -3,6 +3,21 @@
 export interface MenuAction {
   label: string;
   onSelect: () => void;
+  disabled?: boolean; // true なら選択不可。グレーアウトして表示し onSelect は呼ばない
+  note?: string; // ラベル下に常時表示する補足 (無効化の理由など)。スマホでも見えるようツールチップにしない
+}
+
+/** ラベルと (あれば) 補足を item に流し込む */
+function fillItem(item: HTMLElement, action: MenuAction): void {
+  const label = document.createElement("span");
+  label.textContent = action.label;
+  item.append(label);
+  if (action.note) {
+    const note = document.createElement("small");
+    note.className = "menu-item__note";
+    note.textContent = action.note;
+    item.append(note);
+  }
 }
 
 /** アクション一覧のメニューを host に開く。閉じる関数を返す */
@@ -16,10 +31,21 @@ export function openMenu(
   menu.className = "menu";
 
   for (const action of actions) {
+    // 無効項目は div で描画する (button だと一部ブラウザで操作・表示が不安定)。
+    // 無効化の理由は note としてラベル下に常時表示し、ホバー前提のツールチップは
+    // スマホで見えないため使わない
+    if (action.disabled) {
+      const item = document.createElement("div");
+      item.className = "menu-item menu-item--disabled";
+      item.setAttribute("aria-disabled", "true");
+      fillItem(item, action);
+      menu.append(item);
+      continue;
+    }
     const item = document.createElement("button");
     item.type = "button";
     item.className = "menu-item";
-    item.textContent = action.label;
+    fillItem(item, action);
     item.addEventListener("click", () => {
       close();
       action.onSelect();
