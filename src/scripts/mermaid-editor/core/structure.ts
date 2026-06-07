@@ -23,6 +23,23 @@ export function appendStatement(text: string, statement: string): TextEdit {
   return { range: { start: end, end }, newText: `\n${INDENT}${statement}` };
 }
 
+/**
+ * 指定行の前 ("before") / 後 ("after") に 1 文を挿入する TextEdit を返す。
+ * 既存行のインデントに合わせる (ゼロ幅挿入なので戦略 B と整合する)。
+ */
+export function insertStatement(
+  text: string,
+  lineRange: TextEdit["range"],
+  where: "before" | "after",
+  statement: string,
+): TextEdit {
+  const line = text.slice(lineRange.start, lineRange.end);
+  const indent = /^[ \t]*/u.exec(line)?.[0] ?? INDENT;
+  return where === "after"
+    ? { range: { start: lineRange.end, end: lineRange.end }, newText: `\n${indent}${statement}` }
+    : { range: { start: lineRange.start, end: lineRange.start }, newText: `${indent}${statement}\n` };
+}
+
 const DIRECTIONS = ["TD", "LR", "RL", "BT"] as const;
 const DIR_RE = /^(\s*)(flowchart|graph)([ \t]*)(TB|TD|BT|RL|LR)?/d;
 

@@ -8,6 +8,7 @@ import {
   correlateNotes,
   extractActorVisuals,
   extractBlockVisuals,
+  extractLifelines,
   extractEdgeLabelVisuals,
   extractEdgeVisuals,
   extractMessageVisuals,
@@ -42,6 +43,8 @@ const sequenceAdapter: DiagramAdapter = {
   build(text, svg) {
     const t = tokenizeSequence(text);
     return [
+      // ライフラインを先頭に置き、当たり判定でアクター/メッセージの下に敷く
+      ...extractLifelines(svg),
       ...correlateActors(extractActorVisuals(svg), t.actors),
       ...correlateMessages(extractMessageVisuals(svg), t.messages),
       ...correlateNotes(extractNoteVisuals(svg), t.notes),

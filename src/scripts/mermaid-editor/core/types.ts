@@ -114,7 +114,7 @@ export interface TextVisual {
 /** 3 モデルを突き合わせた編集可能要素 */
 export interface EditableElement {
   id: string;
-  kind: "node" | "edge" | "edgeLabel" | "actor" | "message" | "note" | "block";
+  kind: "node" | "edge" | "edgeLabel" | "actor" | "message" | "note" | "block" | "lifeline";
   el: SVGGraphicsElement; // 視覚モデル由来 (g / text いずれも可)
   fields: EditableField[]; // ソースモデル由来 (空なら編集不可)
   refId?: string; // ソース上の論理参照 ID (ノード ID / アクター ID)。接続/追加用
