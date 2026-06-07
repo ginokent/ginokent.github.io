@@ -4,7 +4,7 @@
 - Created: 2026-06-07 08:54 JST
 - Completed:
 - Model: Opus 4.8
-- Branch: claude/focused-brown-YaJPE
+- Branch: feature/add-mermaid-editor-tool
 
 ## 目的
 
