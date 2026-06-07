@@ -173,6 +173,20 @@ export function correlateEdges(
 // ---- シーケンス図 ----
 
 /**
+ * ライフライン (縦線 line.actor-line) を編集要素にする。
+ * mermaid は name 属性にアクター ID を持たせるため、それを refId にする。
+ * fields は空 (ラベル編集不可)。任意タイミングからのメッセージ挿入の起点に使う。
+ */
+export function extractLifelines(svg: SVGSVGElement): EditableElement[] {
+  const result: EditableElement[] = [];
+  for (const el of svg.querySelectorAll<SVGGraphicsElement>("line.actor-line")) {
+    const id = el.getAttribute("name");
+    if (id) result.push({ id: `lifeline-${id}`, kind: "lifeline", el, refId: id, fields: [] });
+  }
+  return result;
+}
+
+/**
  * text 要素を内包する箱 (親 g) を返す。クリック領域を文字ではなく図形全体に
  * 重ねるため、幾何は箱を用いる。mermaid はアクター/ノートの rect と text を
  * 共通の g にまとめるので、その g の外接矩形が図形の枠になる。

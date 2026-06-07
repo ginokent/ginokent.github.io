@@ -14,6 +14,7 @@ const SVGNS = "http://www.w3.org/2000/svg";
 const DBLCLICK_DELAY = 220; // ms
 const EDGE_HIT_WIDTH = 16; // エッジのクリック可能領域の太さ (SVG ユーザー単位)
 const MSG_BAND_PX = 18; // メッセージ矢印のクリック帯の太さ (画面ピクセル)
+const LIFELINE_BAND_PX = 14; // ライフライン (縦線) のクリック帯の太さ (画面ピクセル)
 
 const FIELD_LABELS: Record<string, string> = {
   label: "ラベル",
@@ -57,6 +58,7 @@ export interface OverlayCallbacks {
   onAddEdge(fromId: string, toId: string): void;
   onAddConnectedNode(fromId: string): void;
   onAddMessage(fromId: string, toId: string): void;
+  onInsertMessage(fromId: string, toId: string, anchorId: string | null): void;
   onRemove(el: EditableElement): void;
   onSetShape(el: EditableElement, open: string, close: string): void;
   onSetOperator(el: EditableElement, op: string): void;
@@ -255,6 +257,27 @@ export function drawOverlay(
   };
 
   for (const el of elements) {
+    // ライフライン (縦線): 任意の高さをクリックして、その位置から相手アクターへ
+    // メッセージを挿入する。クリックの y からどのメッセージ間に挿むかを決める。
+    if (el.kind === "lifeline" && el.refId) {
+      const from = el.refId;
+      const r = el.el.getBoundingClientRect();
+      const band = document.createElement("div");
+      band.className = "hit lifeline-hit";
+      band.style.left = `${r.left + r.width / 2 - LIFELINE_BAND_PX / 2 - overlayRect.left}px`;
+      band.style.top = `${r.top - overlayRect.top}px`;
+      band.style.width = `${LIFELINE_BAND_PX}px`;
+      band.style.height = `${r.height}px`;
+      band.title = `${from}: クリックでこの位置からメッセージを追加`;
+      band.addEventListener("click", (e) => {
+        if (pick) return;
+        const anchorId = insertionAnchor(elements, (e as MouseEvent).clientY);
+        startPick(`${from} からの送信先アクターをクリック (Esc で取消)`, isActor, (to) => cb.onInsertMessage(from, to, anchorId), band);
+      });
+      overlayEl.append(band);
+      continue;
+    }
+
     if (el.fields.length === 0) continue; // 編集不可要素はスキップ
 
     if (el.kind === "edge") {
@@ -292,6 +315,23 @@ export function drawOverlay(
     overlayEl.append(hit);
     wire(hit, el, () => el.el.getBoundingClientRect());
   }
+}
+
+/**
+ * クリックの画面 y から、その位置に挿入するメッセージの直前 (上) に来る
+ * メッセージ要素の id を返す。クリックがどのメッセージより上なら null。
+ */
+function insertionAnchor(elements: readonly EditableElement[], clientY: number): string | null {
+  const msgs = elements
+    .filter((e) => e.kind === "message" && e.lineEl)
+    .map((e) => ({ id: e.id, y: e.lineEl!.getBoundingClientRect().top }))
+    .sort((a, b) => a.y - b.y);
+  let anchor: string | null = null;
+  for (const m of msgs) {
+    if (m.y < clientY) anchor = m.id;
+    else break;
+  }
+  return anchor;
 }
 
 /** エッジパスに重ねる、透明で太いクリック用パスを作る */

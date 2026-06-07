@@ -4,8 +4,15 @@ import { History } from "./core/history";
 import { copyText, exportPng, exportSvg } from "./core/export";
 import { save } from "./core/persist";
 import { parseError, renderInto, validate } from "./core/render";
-import { appendStatement, cycleDirectionEdit, deleteLines, freshNodeId } from "./core/structure";
-import type { EditableElement, TextEdit } from "./core/types";
+import { tokenizeSequence } from "./core/source/sequence";
+import {
+  appendStatement,
+  cycleDirectionEdit,
+  deleteLines,
+  freshNodeId,
+  insertStatement,
+} from "./core/structure";
+import type { EditableElement, SourceRange, TextEdit } from "./core/types";
 import { drawOverlay } from "./ui/overlay";
 
 // オーケストレータ: テキスト (正本) を中心に 3 モデルを再構築し、
@@ -134,6 +141,7 @@ export class Editor {
       onAddEdge: (from, to) => void this.addEdge(from, to),
       onAddConnectedNode: (from) => void this.addConnectedNode(from),
       onAddMessage: (from, to) => void this.addMessage(from, to),
+      onInsertMessage: (from, to, anchor) => void this.insertMessage(from, to, anchor),
       onRemove: (el) => void this.remove(el),
       onSetShape: (el, open, close) => void this.setShape(el, open, close),
       onSetOperator: (el, op) => void this.setOperator(el, op),
@@ -163,9 +171,13 @@ export class Editor {
 
   /** 新規参加者を追加する */
   private async addParticipant(): Promise<void> {
-    const id = freshNodeId(this.refIds("actor"), "p");
+    // 採番はソースの participant 宣言から行う。アクターは表示名で相関するため
+    // refIds("actor") は同名追加で崩れて id が増えない (p1,p2,p1,p2…) ため使わない
+    const ids = tokenizeSequence(this.dom.source.value).actors.map((a) => a.id);
+    const id = freshNodeId(ids, "p");
+    const n = id.slice(1); // "p3" → "3" (表示名も一意にして相関衝突を避ける)
     await this.commitEdits([
-      appendStatement(this.dom.source.value, `participant ${id} as 新規参加者`),
+      appendStatement(this.dom.source.value, `participant ${id} as 新規参加者${n}`),
     ]);
   }
 
@@ -184,12 +196,40 @@ export class Editor {
     ]);
   }
 
-  /** from から to へのメッセージを追加する */
+  /** from から to へのメッセージを追加する (文末に追記) */
   async addMessage(fromId: string, toId: string): Promise<void> {
     if (!this.isSequence()) return;
     await this.commitEdits([
       appendStatement(this.dom.source.value, `${fromId}->>${toId}: メッセージ`),
     ]);
+  }
+
+  /**
+   * 指定タイミングにメッセージを挿入する。
+   * anchorId は挿入位置の直前 (上) に来るメッセージ要素の id。
+   * null なら先頭メッセージの前 (メッセージが無ければ文末) に挿入する。
+   */
+  async insertMessage(fromId: string, toId: string, anchorId: string | null): Promise<void> {
+    if (!this.isSequence()) return;
+    const text = this.dom.source.value;
+    const stmt = `${fromId}->>${toId}: メッセージ`;
+    let edit: TextEdit;
+    const after = anchorId ? this.elements.find((e) => e.id === anchorId)?.removeLines?.[0] : undefined;
+    if (after) {
+      edit = insertStatement(text, after, "after", stmt);
+    } else {
+      const first = this.firstMessageRange();
+      edit = first ? insertStatement(text, first, "before", stmt) : appendStatement(text, stmt);
+    }
+    await this.commitEdits([edit]);
+  }
+
+  /** ソース上で最初に現れるメッセージ行の範囲 */
+  private firstMessageRange(): SourceRange | undefined {
+    return this.elements
+      .filter((e) => e.kind === "message" && e.removeLines?.length)
+      .map((e) => e.removeLines![0])
+      .sort((a, b) => a.start - b.start)[0];
   }
 
   private refIds(kind: EditableElement["kind"]): string[] {
