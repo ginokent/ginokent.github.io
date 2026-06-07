@@ -132,19 +132,33 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     エディタは light テーマ前提の自己完結ウィジェットとして色を固定し、サイトの
     dark テーマでも内部の可読性を保つ。
   */
+  /*
+    このツールはテキストと図を縦積みする作業領域なので、ブログ記事向けの既定幅
+    (.container の max-width: 720px) では窮屈になる。.mermaid-editor を含むページの
+    main.container だけを広げ、他ページ (記事・OCR 等) には影響させない。
+  */
+  main.container:has(.mermaid-editor) {
+    max-width: 1100px;
+  }
+
+  /*
+    地 (ページ背景) に乗る見出し・説明・ペイン見出しはサイトのテーマ色に追従させる
+    (ダークテーマで暗文字に潰れないため)。白背景ウィジェット内の文字色は各セレクタで
+    個別に固定しているので、ここで全体に色を被せない。
+  */
   .mermaid-editor {
     font-family: system-ui, sans-serif;
-    color: #1a1a1a;
   }
 
   .mermaid-editor .me-header h1 {
     margin: 0 0 0.25rem;
     font-size: 1.25rem;
+    color: var(--text);
   }
 
   .mermaid-editor .me-header p {
     margin: 0 0 1rem;
-    color: #555;
+    color: var(--text-secondary);
     font-size: 0.85rem;
   }
 
@@ -197,7 +211,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   .mermaid-editor .toolbar-label {
     align-self: center;
     font-size: 0.8rem;
-    color: #64748b;
+    color: var(--text-secondary);
   }
 
   .mermaid-editor .templates {
