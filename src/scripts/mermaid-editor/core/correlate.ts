@@ -327,12 +327,41 @@ export function correlateNotes(
 // ---- 制御ブロック (loop/alt/opt) ----
 
 /**
- * SVG の制御ブロックラベルを抽出する。
+ * SVG の制御ブロックヘッダラベルを抽出する。
  * mermaid はラベルを角括弧で囲む (text.loopText = "[label]") ため、外側の [ ] を剥がす。
+ * キーワードタブ (text.labelText = "alt"/"loop" 等) は同じ行 (近い y) に描かれるため、
+ * クリック領域を広げる用途で各ヘッダに最も近い y のタブを添える。
  */
 export function extractBlockVisuals(svg: SVGSVGElement): TextVisual[] {
+  const tabs = [...svg.querySelectorAll<SVGGraphicsElement>("text.labelText")];
+  const yOf = (el: Element): number => parseFloat(el.getAttribute("y") ?? "NaN");
   const visuals: TextVisual[] = [];
   for (const el of svg.querySelectorAll<SVGGraphicsElement>("text.loopText")) {
+    const raw = (el.textContent ?? "").trim();
+    const text = raw.replace(/^\[(.*)\]$/, "$1");
+    if (!text) continue;
+    const y = yOf(el);
+    let tabEl: SVGGraphicsElement | undefined;
+    let best = Infinity;
+    for (const t of tabs) {
+      const d = Math.abs(yOf(t) - y);
+      if (d < best) {
+        best = d;
+        tabEl = t;
+      }
+    }
+    visuals.push({ text, el, tabEl });
+  }
+  return visuals;
+}
+
+/**
+ * SVG の制御ブロック分岐ラベル (else/and) を抽出する。
+ * mermaid は分岐ラベルを text.sectionTitle = "[label]" として描画する (ヘッダの loopText とは別)。
+ */
+export function extractBranchVisuals(svg: SVGSVGElement): TextVisual[] {
+  const visuals: TextVisual[] = [];
+  for (const el of svg.querySelectorAll<SVGGraphicsElement>("text.sectionTitle")) {
     const raw = (el.textContent ?? "").trim();
     const text = raw.replace(/^\[(.*)\]$/, "$1");
     if (text) visuals.push({ text, el });
@@ -340,7 +369,7 @@ export function extractBlockVisuals(svg: SVGSVGElement): TextVisual[] {
   return visuals;
 }
 
-/** ブロックラベルを表示テキスト一致 + 出現順で対応付ける */
+/** ブロックヘッダラベルを表示テキスト一致 + 出現順で対応付ける */
 export function correlateBlocks(
   visuals: readonly TextVisual[],
   tokens: readonly BlockToken[],
@@ -352,23 +381,46 @@ export function correlateBlocks(
     const idx = remaining.findIndex((v) => v.text === token.label.trim());
     if (idx === -1) continue;
     const [v] = remaining.splice(idx, 1);
-    // 分岐ラベル (else/and) は SVG に描画されないため、ソース範囲を branchN フィールドとして
-    // 持たせる。既存のインライン編集機構 (onApply → buildFieldEdits) でそのまま編集できる
-    const branchFields = token.branches.map((b, i) => ({
-      name: `branch${i}`,
-      value: b.label,
-      ranges: [b.labelRange],
-    }));
     result.push({
       id: `block-${k}`,
       kind: "block",
       el: v.el,
-      fields: [{ name: "label", value: token.label, ranges: [token.labelRange] }, ...branchFields],
+      // alt タブ (キーワード) もブロックメニューを開けるようクリック領域に含める
+      extraHits: v.tabEl ? [v.tabEl] : undefined,
+      fields: [{ name: "label", value: token.label, ranges: [token.labelRange] }],
       block: {
         type: token.type,
         headerStart: token.headerLineRange.start,
         branches: token.branches.map((b) => ({ keyword: b.keyword, label: b.label })),
       },
+    });
+  }
+  return result;
+}
+
+/**
+ * 分岐ラベル (else/and) を独立した編集可能要素として対応付ける。
+ * sectionTitle に直接アンカーするため、入力欄が分岐ラベルの位置に正しく出る。
+ * 全ブロックの分岐を文書順で走査し、表示テキスト一致でラベルへ突き合わせる。
+ */
+export function correlateBranches(
+  visuals: readonly TextVisual[],
+  tokens: readonly BlockToken[],
+): EditableElement[] {
+  const remaining = [...visuals];
+  const result: EditableElement[] = [];
+  for (let k = 0; k < tokens.length; k++) {
+    tokens[k].branches.forEach((b, i) => {
+      if (!b.label.trim()) return; // 空ラベルは描画されないので対象外
+      const idx = remaining.findIndex((v) => v.text === b.label.trim());
+      if (idx === -1) return;
+      const [v] = remaining.splice(idx, 1);
+      result.push({
+        id: `block-${k}-branch-${i}`,
+        kind: "branch",
+        el: v.el,
+        fields: [{ name: "label", value: b.label, ranges: [b.labelRange] }],
+      });
     });
   }
   return result;

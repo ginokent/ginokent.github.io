@@ -1,6 +1,7 @@
 import {
   correlateActors,
   correlateBlocks,
+  correlateBranches,
   correlateEdgeLabels,
   correlateEdges,
   correlateMessages,
@@ -8,6 +9,7 @@ import {
   correlateNotes,
   extractActorVisuals,
   extractBlockVisuals,
+  extractBranchVisuals,
   extractLifelines,
   extractEdgeLabelVisuals,
   extractEdgeVisuals,
@@ -49,6 +51,7 @@ const sequenceAdapter: DiagramAdapter = {
       ...correlateMessages(extractMessageVisuals(svg), t.messages),
       ...correlateNotes(extractNoteVisuals(svg), t.notes),
       ...correlateBlocks(extractBlockVisuals(svg), t.blocks),
+      ...correlateBranches(extractBranchVisuals(svg), t.blocks),
     ];
   },
 };

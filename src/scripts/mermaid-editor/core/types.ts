@@ -135,12 +135,13 @@ export interface TextVisual {
   text: string; // 表示テキスト
   el: SVGGraphicsElement; // 対応する text 要素
   lineEl?: SVGGraphicsElement; // メッセージの矢印線 (line.messageLine*)。クリック領域用
+  tabEl?: SVGGraphicsElement; // 制御ブロックのキーワードタブ (text.labelText)。クリック領域用
 }
 
 /** 3 モデルを突き合わせた編集可能要素 */
 export interface EditableElement {
   id: string;
-  kind: "node" | "edge" | "edgeLabel" | "actor" | "message" | "note" | "block" | "lifeline";
+  kind: "node" | "edge" | "edgeLabel" | "actor" | "message" | "note" | "block" | "branch" | "lifeline";
   el: SVGGraphicsElement; // 視覚モデル由来 (g / text いずれも可)
   fields: EditableField[]; // ソースモデル由来 (空なら編集不可)
   refId?: string; // ソース上の論理参照 ID (ノード ID / アクター ID)。接続/追加用
@@ -151,11 +152,12 @@ export interface EditableElement {
   placementRange?: SourceRange; // 配置句の範囲。配置変更用 (ノートのみ)
   endpoints?: { from: SourceRange; to: SourceRange }; // 始点/終点 ID の範囲。向き反転用 (エッジ・メッセージ)
   lineEl?: SVGGraphicsElement; // メッセージの矢印線。線上のクリック領域用 (メッセージのみ)
+  extraHits?: SVGGraphicsElement[]; // el に加えてクリック領域を張る追加要素 (ブロックの alt タブ等)
   block?: {
-    // 制御ブロック (loop/alt/opt/par) の操作用メタ。分岐ラベルは fields (branchN) で編集する
+    // 制御ブロック (loop/alt/opt/par) の操作用メタ。分岐ラベルは別要素 (kind "branch") で編集する
     type: BlockType; // 種別 (種別変更メニューの活性判定・現在種別表示)
     headerStart: number; // ヘッダ行の開始オフセット (操作時に再トークン化して対象を特定する)
-    branches: { keyword: "else" | "and"; label: string }[]; // 分岐 (編集サブメニュー・存在判定用)
+    branches: { keyword: "else" | "and"; label: string }[]; // 分岐 (種別変更の活性判定・分岐追加の文言用)
   };
 }
 
