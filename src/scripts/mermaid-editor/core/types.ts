@@ -84,6 +84,7 @@ export interface ActorToken {
   id: string; // アクター ID
   display: string; // 表示名 (as の後)
   displayRange: SourceRange; // 表示名のテキスト範囲
+  idRanges: SourceRange[]; // ID が現れる全範囲 (宣言 + メッセージ参照 + ノート配置句)。一括リネーム用
   removeLines: SourceRange[]; // 宣言行 + 参照メッセージ行 (カスケード削除用)
 }
 

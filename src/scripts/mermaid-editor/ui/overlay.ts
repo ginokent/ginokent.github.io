@@ -21,6 +21,12 @@ const FIELD_LABELS: Record<string, string> = {
   id: "ID",
 };
 
+/** フィールド編集メニューのラベル。半角で終わる名前 (ID 等) は全角の前に半角スペースを入れる */
+function editLabel(name: string): string {
+  const base = FIELD_LABELS[name] ?? name;
+  return `${/[A-Za-z0-9]$/.test(base) ? `${base} ` : base}を編集`;
+}
+
 /** ノード形状の候補 (名前 → 括弧) */
 const SHAPE_CHOICES: ReadonlyArray<{ name: string; open: string; close: string }> = [
   { name: "矩形", open: "[", close: "]" },
@@ -233,7 +239,7 @@ export function drawOverlay(
     const a: MenuAction[] = el.fields
       .filter((f) => !f.name.startsWith("branch"))
       .map((f) => ({
-        label: `${FIELD_LABELS[f.name] ?? f.name}を編集`,
+        label: editLabel(f.name),
         onSelect: () => edit(el, f.name, anchor),
       }));
     if (el.kind === "node") {
