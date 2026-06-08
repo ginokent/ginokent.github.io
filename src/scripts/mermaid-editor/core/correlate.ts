@@ -246,7 +246,10 @@ export function correlateActors(
       kind: "actor",
       el: v.el,
       refId: token.id,
-      fields: [{ name: "label", value: token.display, ranges: [token.displayRange] }],
+      fields: [
+        { name: "label", value: token.display, ranges: [token.displayRange] },
+        { name: "id", value: token.id, ranges: token.idRanges },
+      ],
       removeLines: token.removeLines,
     });
   }

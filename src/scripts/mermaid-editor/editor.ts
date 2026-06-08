@@ -350,7 +350,7 @@ export class Editor {
   }
 
   /** 変更フィールドを結合 TextEdit に変換して適用する */
-  private async apply(el: EditableElement, changes: Record<string, string>): Promise<void> {
+  async apply(el: EditableElement, changes: Record<string, string>): Promise<void> {
     await this.commitEdits(buildFieldEdits(el.fields, changes));
   }
 

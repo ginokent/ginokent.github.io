@@ -47,11 +47,23 @@ interface RawMessage {
   toId: string;
 }
 
+// ノート配置句 (over A,B / right of A) のキーワード。アクター ID と区別するため除外する
+const PLACEMENT_KEYWORDS = new Set(["over", "right", "left", "of"]);
+
 export function tokenizeSequence(text: string): SequenceTokens {
   const rawActors: RawActor[] = [];
   const rawMessages: RawMessage[] = [];
   const notes: NoteToken[] = [];
   const blocks: BlockToken[] = [];
+
+  // アクター ID の全出現位置 (宣言 + メッセージ from/to + ノート配置句) を ID ごとに収集する。
+  // 一括リネームのため、テキスト本文ではなく ID トークンの範囲だけを正確に拾う
+  const idOccurrences = new Map<string, SourceRange[]>();
+  const pushId = (id: string, range: SourceRange): void => {
+    const list = idOccurrences.get(id);
+    if (list) list.push(range);
+    else idOccurrences.set(id, [range]);
+  };
 
   // 制御ブロックはネストし得るのでスタックで対応付ける。end で閉じた時点で確定する
   const blockStack: Omit<BlockToken, "endLineRange">[] = [];
@@ -65,6 +77,8 @@ export function tokenizeSequence(text: string): SequenceTokens {
     const actor = ACTOR_RE.exec(line);
     if (actor?.indices) {
       const [start, end] = actor.indices[3]!; // 表示名グループ
+      const idIdx = actor.indices[2]!; // ID グループ
+      pushId(actor[2], abs(base, idIdx[0], idIdx[1]));
       rawActors.push({ id: actor[2], display: actor[3], displayRange: abs(base, start, end), lineRange });
       continue;
     }
@@ -73,6 +87,11 @@ export function tokenizeSequence(text: string): SequenceTokens {
     if (note?.indices) {
       const p = note.indices[2]!; // 配置句
       const t = note.indices[3]!; // 本文
+      // 配置句中のアクター ID (キーワード以外の \w+) を一括リネーム対象として拾う
+      for (const m of note[2].matchAll(/\w+/g)) {
+        if (PLACEMENT_KEYWORDS.has(m[0])) continue;
+        pushId(m[0], abs(base, p[0] + m.index, p[0] + m.index + m[0].length));
+      }
       notes.push({
         text: note[3],
         textRange: abs(base, t[0], t[1]),
@@ -128,11 +147,15 @@ export function tokenizeSequence(text: string): SequenceTokens {
       const activation = msg.indices[4]!; // [+-]? 空幅の場合もある
       const toIdx = msg.indices[5]!;
       const body = msg.indices[6]!;
+      const fromRange = abs(base, fromIdx[0], fromIdx[1]);
+      const toRange = abs(base, toIdx[0], toIdx[1]);
+      pushId(msg[2], fromRange);
+      pushId(msg[5], toRange);
       rawMessages.push({
         text: msg[6],
         textRange: abs(base, body[0], body[1]),
-        fromRange: abs(base, fromIdx[0], fromIdx[1]),
-        toRange: abs(base, toIdx[0], toIdx[1]),
+        fromRange,
+        toRange,
         arrowRange: abs(base, arrow[0], arrow[1]),
         activationRange: abs(base, activation[0], activation[1]),
         lineRange,
@@ -147,6 +170,7 @@ export function tokenizeSequence(text: string): SequenceTokens {
     id: a.id,
     display: a.display,
     displayRange: a.displayRange,
+    idRanges: idOccurrences.get(a.id) ?? [],
     removeLines: uniqueByStart([
       a.lineRange,
       ...rawMessages.filter((m) => m.fromId === a.id || m.toId === a.id).map((m) => m.lineRange),
