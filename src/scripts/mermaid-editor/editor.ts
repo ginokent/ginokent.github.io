@@ -11,6 +11,8 @@ import {
   deleteLines,
   freshNodeId,
   insertStatement,
+  moveLineEdit,
+  participantInsertEdit,
 } from "./core/structure";
 import { addBranchEdits, setBlockTypeEdits, unwrapBlockEdits, wrapInBlockEdits } from "./core/source/block";
 import { hasActivationMarker, type BlockType, type EditableElement, type NotePlacement, type SourceRange, type TextEdit } from "./core/types";
@@ -153,6 +155,7 @@ export class Editor {
       onSetOperator: (el, op) => void this.setOperator(el, op),
       onReverse: (el) => void this.reverse(el),
       onSetActivation: (el, sign) => void this.setActivation(el, sign),
+      onMoveLine: (el, dir) => void this.moveLine(el, dir),
       onWrapBlock: (from, to, type) => void this.wrapInBlock(from, to, type),
       onUnwrapBlock: (el) => void this.unwrapBlock(el),
       onSetBlockType: (el, type) => void this.setBlockType(el, type),
@@ -188,9 +191,18 @@ export class Editor {
     const ids = tokenizeSequence(this.dom.source.value).actors.map((a) => a.id);
     const id = freshNodeId(ids, "p");
     const n = id.slice(1); // "p3" → "3" (表示名も一意にして相関衝突を避ける)
+    // 宣言はメッセージの間に紛れないよう既存の participant 宣言群の直後へ挿入する
     await this.commitEdits([
-      appendStatement(this.dom.source.value, `participant ${id} as 新規参加者${n}`),
+      participantInsertEdit(this.dom.source.value, `participant ${id} as 新規参加者${n}`),
     ]);
+  }
+
+  /** 要素の文を 1 行上/下の文と入れ替える (並び替え) */
+  async moveLine(el: EditableElement, dir: "up" | "down"): Promise<void> {
+    const line = el.removeLines?.[0];
+    if (!line) return;
+    const edits = moveLineEdit(this.dom.source.value, line, dir);
+    if (edits) await this.commitEdits(edits);
   }
 
   /** from から to へのエッジを追加する */
