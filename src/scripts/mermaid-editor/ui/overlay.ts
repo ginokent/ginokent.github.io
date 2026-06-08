@@ -103,11 +103,14 @@ export function drawOverlay(
   cb: OverlayCallbacks,
 ): void {
   overlayEl.replaceChildren();
-  const stageRect = stageEl.getBoundingClientRect();
   // ヒット div は overlay の子なので、overlay 自身の矩形を原点に配置する。
   // stage には border/padding があり、overlay は (inset:0 で) stage のパディングボックスを
   // 基準にするため、stage の矩形基準だと border 分 (1px) 右下へずれてしまう。
   const overlayRect = overlayEl.getBoundingClientRect();
+  // メニュー・入力欄も overlay の子。開く瞬間にライブ計測することで、描画後にページが
+  // スクロールしても anchor (ライブ取得) と座標系が揃い、ずれない。描画時に 1 度だけ
+  // 取得した stage 矩形を基準にすると、スクロール量がそのまま位置ずれになっていた
+  const hostRect = () => overlayEl.getBoundingClientRect();
   const svg = stageEl.querySelector("svg");
 
   // 開いているメニュー / 入力欄は 1 つに限定する
@@ -195,7 +198,7 @@ export function drawOverlay(
   };
 
   const edit = (el: EditableElement, fieldName: string, anchor: () => DOMRect) =>
-    setActive(openInlineEditor(overlayEl, anchor(), stageRect, el, fieldName, cb));
+    setActive(openInlineEditor(overlayEl, anchor(), hostRect(), el, fieldName, cb));
 
   const hasLabel = (el: EditableElement) => el.fields.some((f) => f.name === "label");
   const isNode = (el: EditableElement) => el.kind === "node";
@@ -224,7 +227,7 @@ export function drawOverlay(
               openMenu(
                 overlayEl,
                 anchor(),
-                stageRect,
+                hostRect(),
                 EDGE_TYPES.map((t) => ({ label: t.name, onSelect: () => cb.onSetOperator(el, t.op) })),
               ),
             ),
@@ -255,7 +258,7 @@ export function drawOverlay(
       if (el.shapeRanges) {
         a.push({
           label: "形状を変更 ▸",
-          onSelect: () => setActive(openMenu(overlayEl, anchor(), stageRect, shapeActions(el))),
+          onSelect: () => setActive(openMenu(overlayEl, anchor(), hostRect(), shapeActions(el))),
         });
       }
     }
@@ -267,7 +270,7 @@ export function drawOverlay(
       });
       a.push({
         label: "ノートを追加 ▸",
-        onSelect: () => setActive(openMenu(overlayEl, anchor(), stageRect, noteActions(el.refId!, hitEl))),
+        onSelect: () => setActive(openMenu(overlayEl, anchor(), hostRect(), noteActions(el.refId!, hitEl))),
       });
     }
     if (el.kind === "message") {
@@ -279,7 +282,7 @@ export function drawOverlay(
               openMenu(
                 overlayEl,
                 anchor(),
-                stageRect,
+                hostRect(),
                 MESSAGE_ARROWS.map((t) => ({ label: t.name, onSelect: () => cb.onSetOperator(el, t.op) })),
               ),
             ),
@@ -290,7 +293,7 @@ export function drawOverlay(
           label: "アクティベーション ▸",
           onSelect: () =>
             setActive(
-              openMenu(overlayEl, anchor(), stageRect, [
+              openMenu(overlayEl, anchor(), hostRect(), [
                 { label: "対象を起動 (+)", onSelect: () => cb.onSetActivation(el, "+") },
                 { label: "対象を終了 (−)", onSelect: () => cb.onSetActivation(el, "-") },
                 { label: "起動/終了を解除", onSelect: () => cb.onSetActivation(el, "") },
@@ -320,7 +323,7 @@ export function drawOverlay(
             openMenu(
               overlayEl,
               anchor(),
-              stageRect,
+              hostRect(),
               BLOCK_TYPES.map((t) => ({
                 label: t.name,
                 onSelect: () =>
@@ -339,7 +342,7 @@ export function drawOverlay(
       const block = el.block;
       a.push({
         label: "種別を変更 ▸",
-        onSelect: () => setActive(openMenu(overlayEl, anchor(), stageRect, blockTypeActions(el))),
+        onSelect: () => setActive(openMenu(overlayEl, anchor(), hostRect(), blockTypeActions(el))),
       });
       // 分岐 (else/and) の追加は alt/par のみ
       if (block.type === "alt") a.push({ label: "else を追加", onSelect: () => cb.onAddBranch(el) });
@@ -353,7 +356,7 @@ export function drawOverlay(
               openMenu(
                 overlayEl,
                 anchor(),
-                stageRect,
+                hostRect(),
                 block.branches.map((b, i) => ({
                   label: `${b.keyword} ${b.label || "(空)"}`,
                   onSelect: () => edit(el, `branch${i}`, anchor),
@@ -367,7 +370,7 @@ export function drawOverlay(
     if (el.kind === "note" && el.placementRange) {
       a.push({
         label: "配置を変更 ▸",
-        onSelect: () => setActive(openMenu(overlayEl, anchor(), stageRect, notePlacementActions(el))),
+        onSelect: () => setActive(openMenu(overlayEl, anchor(), hostRect(), notePlacementActions(el))),
       });
     }
     addMove(a, el);
@@ -465,7 +468,7 @@ export function drawOverlay(
       }
       window.clearTimeout(clickTimer);
       clickTimer = window.setTimeout(() => {
-        setActive(openMenu(overlayEl, anchor(), stageRect, actionsFor(el, anchor, hitEl)));
+        setActive(openMenu(overlayEl, anchor(), hostRect(), actionsFor(el, anchor, hitEl)));
       }, DBLCLICK_DELAY);
     });
     hitEl.addEventListener("dblclick", () => {
