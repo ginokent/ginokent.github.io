@@ -553,14 +553,25 @@ export function drawOverlay(
  * クリックの画面 y から、その位置に挿入するメッセージの直前 (上) に来る
  * メッセージ要素の id を返す。クリックがどのメッセージより上なら null。
  */
-function insertionAnchor(elements: readonly EditableElement[], clientY: number): string | null {
-  const msgs = elements
-    .filter((e) => e.kind === "message" && e.lineEl)
-    .map((e) => ({ id: e.id, y: e.lineEl!.getBoundingClientRect().top }))
+/**
+ * クリック Y の直上にある挿入境界要素の id を返す (無ければ null = 先頭)。
+ * メッセージ/ノートに加え、ブロックヘッダ (alt 等) と分岐 (else/and) も境界に含める。
+ * これにより else 区切り線の下をクリックしたとき、前の分岐の末尾ではなく else の中へ
+ * 挿入される (editor 側がヘッダ/分岐の直後に入れる)。
+ */
+export function insertionAnchor(elements: readonly EditableElement[], clientY: number): string | null {
+  const yOf = (e: EditableElement): number | null => {
+    if (e.kind === "message") return e.lineEl ? e.lineEl.getBoundingClientRect().top : null;
+    if (e.kind === "note" || e.kind === "block" || e.kind === "branch") return e.el.getBoundingClientRect().top;
+    return null;
+  };
+  const cands = elements
+    .map((e) => ({ id: e.id, y: yOf(e) }))
+    .filter((c): c is { id: string; y: number } => c.y !== null)
     .sort((a, b) => a.y - b.y);
   let anchor: string | null = null;
-  for (const m of msgs) {
-    if (m.y < clientY) anchor = m.id;
+  for (const c of cands) {
+    if (c.y < clientY) anchor = c.id;
     else break;
   }
   return anchor;

@@ -133,9 +133,10 @@ export interface BlockToken {
 /** 視覚モデル: SVG のテキスト要素とその表示テキスト (アクター / メッセージ) */
 export interface TextVisual {
   text: string; // 表示テキスト
-  el: SVGGraphicsElement; // 対応する text 要素
+  el: SVGGraphicsElement; // 対応する text 要素 (折り返し時は先頭行)
   lineEl?: SVGGraphicsElement; // メッセージの矢印線 (line.messageLine*)。クリック領域用
   tabEl?: SVGGraphicsElement; // 制御ブロックのキーワードタブ (text.labelText)。クリック領域用
+  extraEls?: SVGGraphicsElement[]; // ラベル折り返しで分割された 2 行目以降の text 要素。クリック領域用
 }
 
 /** 3 モデルを突き合わせた編集可能要素 */

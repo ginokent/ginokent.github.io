@@ -26,15 +26,18 @@ export function appendStatement(text: string, statement: string): TextEdit {
 /**
  * 指定行の前 ("before") / 後 ("after") に 1 文を挿入する TextEdit を返す。
  * 既存行のインデントに合わせる (ゼロ幅挿入なので戦略 B と整合する)。
+ * indentOverride を与えると、行のインデントでなくその値を使う
+ * (ブロックヘッダ/分岐の直後へ「本文として」挿入する場合など)。
  */
 export function insertStatement(
   text: string,
   lineRange: TextEdit["range"],
   where: "before" | "after",
   statement: string,
+  indentOverride?: string,
 ): TextEdit {
   const line = text.slice(lineRange.start, lineRange.end);
-  const indent = /^[ \t]*/u.exec(line)?.[0] ?? INDENT;
+  const indent = indentOverride ?? (/^[ \t]*/u.exec(line)?.[0] ?? INDENT);
   return where === "after"
     ? { range: { start: lineRange.end, end: lineRange.end }, newText: `\n${indent}${statement}` }
     : { range: { start: lineRange.start, end: lineRange.start }, newText: `${indent}${statement}\n` };
@@ -117,6 +120,11 @@ export function allLineRanges(text: string): SourceRange[] {
     offset += line.length + 1;
   }
   return ranges;
+}
+
+/** 指定オフセットを含む行の範囲を返す (無ければ undefined) */
+export function lineRangeAt(text: string, offset: number): SourceRange | undefined {
+  return allLineRanges(text).find((r) => r.start <= offset && offset <= r.end);
 }
 
 const PARTICIPANT_RE = /^\s*(?:participant|actor)\b/;
