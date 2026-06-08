@@ -69,6 +69,7 @@ export interface OverlayCallbacks {
   onSetShape(el: EditableElement, open: string, close: string): void;
   onSetOperator(el: EditableElement, op: string): void;
   onReverse(el: EditableElement): void;
+  onReconnectMessage(el: EditableElement, end: "from" | "to", actorId: string): void;
   onSetActivation(el: EditableElement, sign: string): void;
   onAddNote(placement: NotePlacement, actorIds: string[], anchorId: string | null): void;
   onSetNotePlacement(el: EditableElement, placement: NotePlacement, actorIds: string[]): void;
@@ -314,6 +315,18 @@ export function drawOverlay(
               }
             : { label: "矢印の向きを入れ替える", onSelect: () => cb.onReverse(el) },
         );
+        // 送信元/送信先のアクターを別のアクターに付け替える (フローチャートのエッジ再接続と同等)。
+        // 活性化マーカー ([+-]) 付きは付け替えると起動/終了の対応が崩れるため反転と同様に無効化する
+        const reconnect = (label: string, end: "from" | "to", who: string): MenuAction =>
+          hasActivationMarker(el)
+            ? { label, onSelect: () => {}, disabled: true, note: "活性化マーカー (+/-) 付きは変更できません" }
+            : {
+                label,
+                onSelect: () =>
+                  startPickActor(`新しい${who}のアクター (箱か縦線) をクリック (Esc で取消)`, isActorTarget, (id) => cb.onReconnectMessage(el, end, id), hitEl),
+              };
+        a.push(reconnect("送信元を変更", "from", "送信元"));
+        a.push(reconnect("送信先を変更", "to", "送信先"));
       }
       addWrapInBlock(a, el, anchor, hitEl);
     }

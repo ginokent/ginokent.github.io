@@ -185,6 +185,7 @@ export class Editor {
       onSetShape: (el, open, close) => void this.setShape(el, open, close),
       onSetOperator: (el, op) => void this.setOperator(el, op),
       onReverse: (el) => void this.reverse(el),
+      onReconnectMessage: (el, end, actorId) => void this.reconnectMessage(el, end, actorId),
       onSetActivation: (el, sign) => void this.setActivation(el, sign),
       onMoveLine: (el, dir) => void this.moveLine(el, dir),
       onWrapBlock: (from, to, type) => void this.wrapInBlock(from, to, type),
@@ -365,6 +366,15 @@ export class Editor {
   private async setActivation(el: EditableElement, sign: string): Promise<void> {
     if (!el.activationRange) return;
     await this.commitEdits([{ range: el.activationRange, newText: sign }]);
+  }
+
+  /** メッセージの送信元 (from) / 送信先 (to) のアクターを付け替える */
+  async reconnectMessage(el: EditableElement, end: "from" | "to", actorId: string): Promise<void> {
+    if (!el.endpoints) return;
+    // 活性化マーカー付きは付け替えると起動/終了の対応が崩れて不正になる。
+    // UI 側でもグレーアウトしているが、防御的にここでも弾く (反転と同じ扱い)
+    if (hasActivationMarker(el)) return;
+    await this.commitEdits([{ range: el.endpoints[end], newText: actorId }]);
   }
 
   /** 2 つのメッセージ (始点・終点) を制御ブロックで囲む */
