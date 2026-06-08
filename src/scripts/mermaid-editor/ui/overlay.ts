@@ -121,12 +121,13 @@ export function drawOverlay(
     active = close;
   };
 
-  // 操作モード: 要素選択 (pickActor) / ノート配置 (placeNote)。
+  // 操作モード: 要素選択 (pickActor) / ノート配置 (placeNote) / ブロック終点の高さ指定 (wrapEnd)。
   // Esc または枠外 (ヒット以外) のクリックで取消できる。
   type Pending =
     | { kind: "pickActor"; accept: (el: EditableElement) => boolean; onPick: (refId: string) => void }
     | { kind: "pickEl"; accept: (el: EditableElement) => boolean; onPick: (el: EditableElement) => void }
-    | { kind: "placeNote"; placement: NotePlacement; actorIds: string[] };
+    | { kind: "placeNote"; placement: NotePlacement; actorIds: string[] }
+    | { kind: "wrapEnd"; y1: number; type: BlockType };
   let pending: Pending | null = null;
   let pickSource: Element | null = null;
   let hint: HTMLElement | null = null;
@@ -179,6 +180,9 @@ export function drawOverlay(
     onPick: (el: EditableElement) => void,
     source?: Element,
   ) => beginPending({ kind: "pickEl", accept, onPick }, hintText, source);
+  // ブロックで囲む: 始点の高さ y1 を持ち、終点の高さをライフライン/要素クリックで指定させる
+  const startWrapEnd = (y1: number, type: BlockType, source?: Element) =>
+    beginPending({ kind: "wrapEnd", y1, type }, "囲む終点の高さをライフライン (またはメッセージ/ノート) でクリック (Esc で取消)", source);
 
   /** pickActor 中にクリックされた要素を送信先候補として確定/取消する */
   const resolvePick = (el: EditableElement): void => {
@@ -419,6 +423,24 @@ export function drawOverlay(
     ];
   };
 
+  // ライフラインのクリック位置 (anchorId) を使い、その高さへ直接ノートを追加するサブメニュー。
+  // アクターメニュー経由 (noteActions) と違い、高さは既に決まっているので再クリック不要。
+  const lifelineNoteActions = (actorId: string, anchorId: string | null, source: Element): MenuAction[] => [
+    { label: "右側に", onSelect: () => cb.onAddNote("right", [actorId], anchorId) },
+    { label: "左側に", onSelect: () => cb.onAddNote("left", [actorId], anchorId) },
+    { label: "重ねる", onSelect: () => cb.onAddNote("over", [actorId], anchorId) },
+    {
+      label: "2 者にまたがる ▸",
+      onSelect: () =>
+        startPickActor(
+          `${actorId} とまたぐ相手のアクター (箱か縦線) をクリック (Esc で取消)`,
+          isActorTarget,
+          (other) => cb.onAddNote("over", [actorId, other], anchorId),
+          source,
+        ),
+    },
+  ];
+
   function addRemove(actions: MenuAction[], el: EditableElement): void {
     if (el.removeLines && el.removeLines.length > 0) {
       actions.push({ label: "削除", onSelect: () => cb.onRemove(el) });
@@ -459,6 +481,49 @@ export function drawOverlay(
     });
   }
 
+  // 要素 (メッセージ/ノート) の画面上の高さ。当たり判定はメッセージは矢印線、ノートは箱
+  const wrappableY = (e: EditableElement): number =>
+    (e.kind === "message" && e.lineEl ? e.lineEl : e.el).getBoundingClientRect().top;
+
+  // 2 つの高さ (y1, y2) の間にある wrappable 要素のうち最上と最下を返す (無ければ null)
+  const wrapRangeBetween = (y1: number, y2: number): { from: EditableElement; to: EditableElement } | null => {
+    const lo = Math.min(y1, y2);
+    const hi = Math.max(y1, y2);
+    const inRange = elements
+      .filter(isWrappable)
+      .map((e) => ({ e, y: wrappableY(e) }))
+      .filter(({ y }) => y >= lo && y <= hi)
+      .sort((a, b) => a.y - b.y);
+    if (inRange.length === 0) return null;
+    return { from: inRange[0].e, to: inRange[inRange.length - 1].e };
+  };
+
+  // wrapEnd 中に終点の高さ y2 が決まったら、始点との間の範囲を囲む
+  const resolveWrapEnd = (y2: number): void => {
+    if (pending?.kind !== "wrapEnd") return;
+    const { y1, type } = pending;
+    cancelPending();
+    const range = wrapRangeBetween(y1, y2);
+    if (range) cb.onWrapBlock(range.from, range.to, type);
+  };
+
+  // ライフライン用: 種別を選び、始点 (このクリック高さ y1) と終点の高さの間を囲む。
+  // 矢印を直接クリックしなくても、高さ (どのメッセージの上/下か) で範囲を指定できる
+  function addWrapRange(actions: MenuAction[], y1: number, anchorRect: DOMRect, source: Element): void {
+    actions.push({
+      label: "ブロックで囲む ▸",
+      onSelect: () =>
+        setActive(
+          openMenu(
+            overlayEl,
+            anchorRect,
+            hostRect(),
+            BLOCK_TYPES.map((t) => ({ label: t.name, onSelect: () => startWrapEnd(y1, t.type, source) })),
+          ),
+        ),
+    });
+  }
+
   const wire = (hitEl: Element, el: EditableElement, anchor: () => DOMRect) => {
     let clickTimer: number | undefined;
     hitEl.addEventListener("click", () => {
@@ -466,6 +531,8 @@ export function drawOverlay(
         // pickActor/pickEl 中はこの要素を候補に。placeNote 中の非ライフラインは取消
         if (pending.kind === "pickActor") resolvePick(el);
         else if (pending.kind === "pickEl") resolvePickEl(el);
+        // wrapEnd 中: 矢印/ノートのクリックでもその高さを終点にできる (ライフライン以外でも可)
+        else if (pending.kind === "wrapEnd" && isWrappable(el)) resolveWrapEnd(wrappableY(el));
         else cancelPending();
         return;
       }
@@ -493,7 +560,7 @@ export function drawOverlay(
       band.style.top = `${r.top - overlayRect.top}px`;
       band.style.width = `${LIFELINE_BAND_PX}px`;
       band.style.height = `${r.height}px`;
-      band.title = `${from}: クリックでこの位置からメッセージを追加`;
+      band.title = `${from}: クリックでこの位置にメッセージ/ノートを追加`;
       band.addEventListener("click", (e) => {
         // 送信先ピック中はこの縦線を送信先として確定する (アクターの箱と同等)
         if (pending?.kind === "pickActor") {
@@ -508,13 +575,35 @@ export function drawOverlay(
           cb.onAddNote(placement, actorIds, anchorId);
           return;
         }
+        // ブロックで囲む終点の高さ指定中は、この縦線のクリック高さを終点にする
+        if (pending?.kind === "wrapEnd") {
+          resolveWrapEnd((e as MouseEvent).clientY);
+          return;
+        }
         // その他のピック中 (pickEl 等) はライフラインを対象外とし取消する
         if (pending) {
           cancelPending();
           return;
         }
-        const anchorId = insertionAnchor(elements, (e as MouseEvent).clientY);
-        startPickActor(`${from} からの送信先 (アクターの箱か縦線) をクリック (Esc で取消)`, isActorTarget, (to) => cb.onInsertMessage(from, to, anchorId), band);
+        // 縦線を直クリックしたときはメニューを出し、メッセージ追加かノート追加を選ばせる。
+        // どちらもクリックした高さ (anchorId) をその位置として使う
+        const me = e as MouseEvent;
+        const anchorId = insertionAnchor(elements, me.clientY);
+        const at = pointRect(me.clientX, me.clientY);
+        const menu: MenuAction[] = [
+          {
+            label: "メッセージを追加",
+            onSelect: () =>
+              startPickActor(`${from} からの送信先 (アクターの箱か縦線) をクリック (Esc で取消)`, isActorTarget, (to) => cb.onInsertMessage(from, to, anchorId), band),
+          },
+          {
+            label: "ノートを追加 ▸",
+            onSelect: () => setActive(openMenu(overlayEl, at, hostRect(), lifelineNoteActions(from, anchorId, band))),
+          },
+        ];
+        // ブロックで囲む: このクリック高さを始点に、終点の高さをもう一度クリックして範囲を囲む
+        addWrapRange(menu, me.clientY, at, band);
+        setActive(openMenu(overlayEl, at, hostRect(), menu));
       });
       overlayEl.append(band);
       continue;
@@ -562,10 +651,11 @@ export function drawOverlay(
   }
 }
 
-/**
- * クリックの画面 y から、その位置に挿入するメッセージの直前 (上) に来る
- * メッセージ要素の id を返す。クリックがどのメッセージより上なら null。
- */
+/** クリック地点をアンカーにするための幅 0 の矩形 (メニューの配置基準に使う) */
+function pointRect(x: number, y: number): DOMRect {
+  return { left: x, top: y, right: x, bottom: y, width: 0, height: 0, x, y, toJSON() {} } as DOMRect;
+}
+
 /**
  * クリック Y の直上にある挿入境界要素の id を返す (無ければ null = 先頭)。
  * メッセージ/ノートに加え、ブロックヘッダ (alt 等) と分岐 (else/and) も境界に含める。
