@@ -327,11 +327,12 @@ export function correlateNotes(
 // ---- 制御ブロック (loop/alt/opt) ----
 
 /**
- * 制御ブロックのラベル一致用の正規化。折り返しで分割・結合する際、mermaid は
- * 空白を落とし、CJK の語中改行にはハイフン (breakString のハイフネーション文字) を
- * 挿入する。これらの折り返し由来の差分を吸収するため、空白とハイフンを除いて比較する。
+ * 制御ブロックのラベル一致用の正規化。描画時の折り返しで生じる差分を吸収する:
+ * - 手動改行 `<br>` は描画時に行分割されて消える (ソースには残る) ため除去する
+ * - mermaid は折り返しで空白を落とし、CJK の語中改行にはハイフン (breakString の
+ *   ハイフネーション文字) を挿入するため、空白とハイフンも除いて比較する
  */
-const normLabel = (s: string): string => s.replace(/[\s-]+/gu, "");
+const normLabel = (s: string): string => s.replace(/<br\s*\/?>/giu, "").replace(/[\s-]+/gu, "");
 
 /**
  * 角括弧ラベル ("[label]") の text 要素群を 1 ラベルごとにまとめる。
