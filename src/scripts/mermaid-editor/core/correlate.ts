@@ -327,46 +327,79 @@ export function correlateNotes(
 // ---- 制御ブロック (loop/alt/opt) ----
 
 /**
+ * 制御ブロックのラベル一致用の正規化。折り返しで分割・結合する際、mermaid は
+ * 空白を落とし、CJK の語中改行にはハイフン (breakString のハイフネーション文字) を
+ * 挿入する。これらの折り返し由来の差分を吸収するため、空白とハイフンを除いて比較する。
+ */
+const normLabel = (s: string): string => s.replace(/[\s-]+/gu, "");
+
+/**
+ * 角括弧ラベル ("[label]") の text 要素群を 1 ラベルごとにまとめる。
+ * mermaid は長いラベルを折り返すと行ごとに別々の <text> 要素へ分割するため
+ * ("[とても長い" / "ラベル]" のように)、`[` で始まる断片を起点に `]` で終わるまで
+ * 連結して全文を復元する。先頭行を el、2 行目以降を extra (クリック領域用) とする。
+ */
+function groupBracketLabels(
+  els: SVGGraphicsElement[],
+): { text: string; el: SVGGraphicsElement; extra: SVGGraphicsElement[] }[] {
+  const out: { text: string; el: SVGGraphicsElement; extra: SVGGraphicsElement[] }[] = [];
+  let cur: { raw: string; el: SVGGraphicsElement; extra: SVGGraphicsElement[] } | null = null;
+  const flush = () => {
+    if (cur) out.push({ text: cur.raw.replace(/^\[(.*)\]$/u, "$1"), el: cur.el, extra: cur.extra });
+    cur = null;
+  };
+  for (const el of els) {
+    const t = (el.textContent ?? "").trim();
+    if (!t) continue;
+    if (cur && !t.startsWith("[")) {
+      cur.raw += t; // 折り返しの続き
+      cur.extra.push(el);
+    } else {
+      flush(); // 新しいラベルの開始
+      cur = { raw: t, el, extra: [] };
+    }
+    if (cur.raw.endsWith("]")) flush();
+  }
+  flush();
+  return out;
+}
+
+/**
  * SVG の制御ブロックヘッダラベルを抽出する。
  * mermaid はラベルを角括弧で囲む (text.loopText = "[label]") ため、外側の [ ] を剥がす。
+ * 長いラベルは複数 text に折り返されるので groupBracketLabels で 1 ラベルへ結合する。
  * キーワードタブ (text.labelText = "alt"/"loop" 等) は同じ行 (近い y) に描かれるため、
- * クリック領域を広げる用途で各ヘッダに最も近い y のタブを添える。
+ * クリック領域を広げる用途で各ヘッダ先頭行に最も近い y のタブを添える。
  */
 export function extractBlockVisuals(svg: SVGSVGElement): TextVisual[] {
   const tabs = [...svg.querySelectorAll<SVGGraphicsElement>("text.labelText")];
   const yOf = (el: Element): number => parseFloat(el.getAttribute("y") ?? "NaN");
-  const visuals: TextVisual[] = [];
-  for (const el of svg.querySelectorAll<SVGGraphicsElement>("text.loopText")) {
-    const raw = (el.textContent ?? "").trim();
-    const text = raw.replace(/^\[(.*)\]$/, "$1");
-    if (!text) continue;
-    const y = yOf(el);
-    let tabEl: SVGGraphicsElement | undefined;
-    let best = Infinity;
-    for (const t of tabs) {
-      const d = Math.abs(yOf(t) - y);
-      if (d < best) {
-        best = d;
-        tabEl = t;
+  return groupBracketLabels([...svg.querySelectorAll<SVGGraphicsElement>("text.loopText")])
+    .filter((g) => g.text !== "")
+    .map((g) => {
+      const y = yOf(g.el);
+      let tabEl: SVGGraphicsElement | undefined;
+      let best = Infinity;
+      for (const t of tabs) {
+        const d = Math.abs(yOf(t) - y);
+        if (d < best) {
+          best = d;
+          tabEl = t;
+        }
       }
-    }
-    visuals.push({ text, el, tabEl });
-  }
-  return visuals;
+      return { text: g.text, el: g.el, tabEl, extraEls: g.extra };
+    });
 }
 
 /**
  * SVG の制御ブロック分岐ラベル (else/and) を抽出する。
  * mermaid は分岐ラベルを text.sectionTitle = "[label]" として描画する (ヘッダの loopText とは別)。
+ * 長いラベルは複数 text に折り返されるので groupBracketLabels で 1 ラベルへ結合する。
  */
 export function extractBranchVisuals(svg: SVGSVGElement): TextVisual[] {
-  const visuals: TextVisual[] = [];
-  for (const el of svg.querySelectorAll<SVGGraphicsElement>("text.sectionTitle")) {
-    const raw = (el.textContent ?? "").trim();
-    const text = raw.replace(/^\[(.*)\]$/, "$1");
-    if (text) visuals.push({ text, el });
-  }
-  return visuals;
+  return groupBracketLabels([...svg.querySelectorAll<SVGGraphicsElement>("text.sectionTitle")])
+    .filter((g) => g.text !== "")
+    .map((g) => ({ text: g.text, el: g.el, extraEls: g.extra }));
 }
 
 /** ブロックヘッダラベルを表示テキスト一致 + 出現順で対応付ける */
@@ -378,15 +411,16 @@ export function correlateBlocks(
   const result: EditableElement[] = [];
   for (let k = 0; k < tokens.length; k++) {
     const token = tokens[k];
-    const idx = remaining.findIndex((v) => v.text === token.label.trim());
+    const idx = remaining.findIndex((v) => normLabel(v.text) === normLabel(token.label));
     if (idx === -1) continue;
     const [v] = remaining.splice(idx, 1);
+    // alt タブ (キーワード) と折り返し 2 行目以降もクリック領域に含める
+    const extraHits = [...(v.tabEl ? [v.tabEl] : []), ...(v.extraEls ?? [])];
     result.push({
       id: `block-${k}`,
       kind: "block",
       el: v.el,
-      // alt タブ (キーワード) もブロックメニューを開けるようクリック領域に含める
-      extraHits: v.tabEl ? [v.tabEl] : undefined,
+      extraHits: extraHits.length > 0 ? extraHits : undefined,
       fields: [{ name: "label", value: token.label, ranges: [token.labelRange] }],
       block: {
         type: token.type,
@@ -412,13 +446,14 @@ export function correlateBranches(
   for (let k = 0; k < tokens.length; k++) {
     tokens[k].branches.forEach((b, i) => {
       if (!b.label.trim()) return; // 空ラベルは描画されないので対象外
-      const idx = remaining.findIndex((v) => v.text === b.label.trim());
+      const idx = remaining.findIndex((v) => normLabel(v.text) === normLabel(b.label));
       if (idx === -1) return;
       const [v] = remaining.splice(idx, 1);
       result.push({
         id: `block-${k}-branch-${i}`,
         kind: "branch",
         el: v.el,
+        extraHits: v.extraEls && v.extraEls.length > 0 ? v.extraEls : undefined, // 折り返し 2 行目以降
         fields: [{ name: "label", value: b.label, ranges: [b.labelRange] }],
       });
     });

@@ -6,11 +6,13 @@ import { save } from "./core/persist";
 import { parseError, renderInto, validate } from "./core/render";
 import { tokenizeSequence } from "./core/source/sequence";
 import {
+  INDENT,
   appendStatement,
   cycleDirectionEdit,
   deleteLines,
   freshNodeId,
   insertStatement,
+  lineRangeAt,
   moveLineEdit,
   participantInsertEdit,
 } from "./core/structure";
@@ -279,18 +281,40 @@ export class Editor {
     await this.commitEdits([{ range: el.placementRange, newText: noteHead(placement, actorIds) }]);
   }
 
-  /** anchorId のメッセージ直後 (null なら先頭の前、メッセージが無ければ文末) に 1 文挿入する */
+  /** anchorId の要素の直後 (null なら先頭の前、メッセージが無ければ文末) に 1 文挿入する */
   private async insertAtAnchor(stmt: string, anchorId: string | null): Promise<void> {
     const text = this.dom.source.value;
-    const after = anchorId ? this.elements.find((e) => e.id === anchorId)?.removeLines?.[0] : undefined;
+    const el = anchorId ? this.elements.find((e) => e.id === anchorId) : undefined;
+    const at = el ? this.anchorInsert(text, el) : undefined;
     let edit: TextEdit;
-    if (after) {
-      edit = insertStatement(text, after, "after", stmt);
+    if (at) {
+      edit = insertStatement(text, at.line, "after", stmt, at.indent);
     } else {
       const first = this.firstMessageRange();
       edit = first ? insertStatement(text, first, "before", stmt) : appendStatement(text, stmt);
     }
     await this.commitEdits([edit]);
+  }
+
+  /**
+   * 挿入アンカー要素から「直後へ挿入する行」と本文インデントを求める。
+   * メッセージ/ノートはその行の直後 (同インデント)。ブロックヘッダ (alt 等) や
+   * 分岐 (else/and) はその節の先頭へ入れたいので、ヘッダ/分岐行の直後に 1 段深い
+   * インデントで挿入する。これにより else 枠内クリックが else の中へ正しく入る。
+   */
+  private anchorInsert(text: string, el: EditableElement): { line: SourceRange; indent?: string } | undefined {
+    if (el.kind === "message" || el.kind === "note") {
+      const line = el.removeLines?.[0];
+      return line ? { line } : undefined;
+    }
+    let offset: number | undefined;
+    if (el.kind === "block" && el.block) offset = el.block.headerStart;
+    else if (el.kind === "branch") offset = el.fields[0]?.ranges[0]?.start;
+    if (offset === undefined) return undefined;
+    const line = lineRangeAt(text, offset);
+    if (!line) return undefined;
+    const lead = /^[ \t]*/u.exec(text.slice(line.start, line.end))?.[0] ?? "";
+    return { line, indent: lead + INDENT };
   }
 
   /** ソース上で最初に現れるメッセージ行の範囲 */
