@@ -210,11 +210,16 @@ export function extractActorVisuals(svg: SVGSVGElement): TextVisual[] {
 }
 
 /**
- * SVG のメッセージ本文テキストを文書順で抽出し、同順の矢印線 (line.messageLine*) を
+ * SVG のメッセージ本文テキストを文書順で抽出し、同順の矢印線 (.messageLine*) を
  * 添える。メッセージ・本文・線はいずれも文書順で 1:1 対応するため添字で対応付ける。
+ *
+ * 矢印は通常 `<line class="messageLine0/1">` だが、自己メッセージ (A->>A) はループを
+ * `<path class="messageLine0">` で描画する。タグを限定すると自己メッセージの行が抜け、
+ * 以降のメッセージで本文と線の添字がずれて当たり判定が別の矢印に乗ってしまうため、
+ * タグを問わずクラスで拾う。
  */
 export function extractMessageVisuals(svg: SVGSVGElement): TextVisual[] {
-  const lines = svg.querySelectorAll<SVGGraphicsElement>("line.messageLine0, line.messageLine1");
+  const lines = svg.querySelectorAll<SVGGraphicsElement>(".messageLine0, .messageLine1");
   const visuals: TextVisual[] = [];
   const texts = svg.querySelectorAll<SVGGraphicsElement>("text.messageText");
   texts.forEach((el, k) => {
