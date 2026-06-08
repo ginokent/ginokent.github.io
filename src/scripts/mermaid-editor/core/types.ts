@@ -106,10 +106,27 @@ export interface NoteToken {
   removeLines: SourceRange[]; // ノート行 (削除用)
 }
 
-/** ソースモデル: 制御ブロックのヘッダ (loop/alt/opt/par <label>) */
+/** 制御ブロックの種別 (loop/alt/opt/par) */
+export type BlockType = "loop" | "alt" | "opt" | "par";
+
+/** ソースモデル: 制御ブロックの分岐 (alt の else / par の and)。SVG には描画されない */
+export interface BlockBranch {
+  keyword: "else" | "and"; // alt は else、par は and
+  keywordRange: SourceRange; // キーワードの範囲 (種別変更時のキーワード置換用)
+  label: string; // 分岐ラベル (空可)
+  labelRange: SourceRange; // 分岐ラベル本文の範囲 (編集用、空のときはキーワード直後の空幅)
+  lineRange: SourceRange; // 分岐行全体 (解除時の削除用)
+}
+
+/** ソースモデル: 制御ブロック (loop/alt/opt/par … end) の構造 */
 export interface BlockToken {
-  label: string; // ブロックのラベル
-  labelRange: SourceRange; // ラベルのテキスト範囲
+  type: BlockType;
+  keywordRange: SourceRange; // 種別キーワードの範囲 (種別変更用)
+  label: string; // ヘッダラベル
+  labelRange: SourceRange; // ヘッダラベル本文の範囲 (相関・編集用)
+  headerLineRange: SourceRange; // ヘッダ行全体 (loop/alt/opt/par <label>)
+  branches: BlockBranch[]; // else/and 分岐 (なければ空)
+  endLineRange: SourceRange; // 対応する end 行
 }
 
 /** 視覚モデル: SVG のテキスト要素とその表示テキスト (アクター / メッセージ) */
@@ -133,6 +150,12 @@ export interface EditableElement {
   placementRange?: SourceRange; // 配置句の範囲。配置変更用 (ノートのみ)
   endpoints?: { from: SourceRange; to: SourceRange }; // 始点/終点 ID の範囲。向き反転用 (エッジ・メッセージ)
   lineEl?: SVGGraphicsElement; // メッセージの矢印線。線上のクリック領域用 (メッセージのみ)
+  block?: {
+    // 制御ブロック (loop/alt/opt/par) の操作用メタ。分岐ラベルは fields (branchN) で編集する
+    type: BlockType; // 種別 (種別変更メニューの活性判定・現在種別表示)
+    headerStart: number; // ヘッダ行の開始オフセット (操作時に再トークン化して対象を特定する)
+    branches: { keyword: "else" | "and"; label: string }[]; // 分岐 (編集サブメニュー・存在判定用)
+  };
 }
 
 /**

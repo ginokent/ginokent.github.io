@@ -12,7 +12,8 @@ import {
   freshNodeId,
   insertStatement,
 } from "./core/structure";
-import { hasActivationMarker, type EditableElement, type NotePlacement, type SourceRange, type TextEdit } from "./core/types";
+import { addBranchEdits, setBlockTypeEdits, unwrapBlockEdits, wrapInBlockEdits } from "./core/source/block";
+import { hasActivationMarker, type BlockType, type EditableElement, type NotePlacement, type SourceRange, type TextEdit } from "./core/types";
 import { drawOverlay } from "./ui/overlay";
 
 // オーケストレータ: テキスト (正本) を中心に 3 モデルを再構築し、
@@ -152,6 +153,10 @@ export class Editor {
       onSetOperator: (el, op) => void this.setOperator(el, op),
       onReverse: (el) => void this.reverse(el),
       onSetActivation: (el, sign) => void this.setActivation(el, sign),
+      onWrapBlock: (from, to, type) => void this.wrapInBlock(from, to, type),
+      onUnwrapBlock: (el) => void this.unwrapBlock(el),
+      onSetBlockType: (el, type) => void this.setBlockType(el, type),
+      onAddBranch: (el) => void this.addBranch(el),
       onAddNote: (placement, actorIds, anchor) => void this.addNote(placement, actorIds, anchor),
       onSetNotePlacement: (el, placement, actorIds) => void this.setNotePlacement(el, placement, actorIds),
     });
@@ -295,6 +300,34 @@ export class Editor {
   private async setActivation(el: EditableElement, sign: string): Promise<void> {
     if (!el.activationRange) return;
     await this.commitEdits([{ range: el.activationRange, newText: sign }]);
+  }
+
+  /** 2 つのメッセージ (始点・終点) を制御ブロックで囲む */
+  async wrapInBlock(from: EditableElement, to: EditableElement, type: BlockType): Promise<void> {
+    const fromLine = from.removeLines?.[0];
+    const toLine = to.removeLines?.[0];
+    if (!fromLine || !toLine) return;
+    const edits = wrapInBlockEdits(this.dom.source.value, fromLine, toLine, type);
+    if (!edits) return; // well-nested でない範囲は無視 (commitEdits の検証でも弾かれる)
+    await this.commitEdits(edits);
+  }
+
+  /** 制御ブロックの囲みを解除する (中身は 1 段デデントして残す) */
+  async unwrapBlock(el: EditableElement): Promise<void> {
+    if (!el.block) return;
+    await this.commitEdits(unwrapBlockEdits(this.dom.source.value, el.block.headerStart));
+  }
+
+  /** 制御ブロックの種別 (loop/alt/opt/par) を変更する */
+  async setBlockType(el: EditableElement, type: BlockType): Promise<void> {
+    if (!el.block) return;
+    await this.commitEdits(setBlockTypeEdits(this.dom.source.value, el.block.headerStart, type));
+  }
+
+  /** 制御ブロック (alt/par) に分岐 (else/and) を追加する */
+  async addBranch(el: EditableElement): Promise<void> {
+    if (!el.block) return;
+    await this.commitEdits(addBranchEdits(this.dom.source.value, el.block.headerStart));
   }
 
   /** フローチャートの方向を TD→LR→RL→BT で切り替える */

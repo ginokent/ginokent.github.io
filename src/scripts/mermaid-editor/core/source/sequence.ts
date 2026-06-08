@@ -1,4 +1,4 @@
-import type { ActorToken, BlockToken, MessageToken, NoteToken, SourceRange } from "../types";
+import type { ActorToken, BlockBranch, BlockToken, BlockType, MessageToken, NoteToken, SourceRange } from "../types";
 
 // ソースモデル層 (シーケンス図)
 //
@@ -16,8 +16,11 @@ const MESSAGE_RE = /^(\s*)(\w+)\s*(--?(?:>>?|x|\)))\s*([+-]?)(\w+)\s*:\s*(.+?)\s
 // Note over A[,B] : text  /  Note (right|left) of A : text
 // group2 = 配置句 (over A,B / right of A 等)、group3 = 本文
 const NOTE_RE = /^(\s*)[Nn]ote\s+(over\s+\w+(?:\s*,\s*\w+)?|(?:right|left)\s+of\s+\w+)\s*:\s*(.+?)\s*$/d;
-// loop/alt/opt/par <label>
-const BLOCK_RE = /^(\s*)(?:loop|alt|opt|par)\s+(.+?)\s*$/d;
+// 制御ブロック: ヘッダ (loop/alt/opt/par [label]) / 分岐 (else/and [label]) / end。
+// ラベルは省略可。キーワード直後の空白を [ \t]+ で要求し、message (loop->>B 等) との誤認を避ける
+const BLOCK_HEAD_RE = /^(\s*)(loop|alt|opt|par)(?:[ \t]+(.+?))?[ \t]*$/d;
+const BLOCK_BRANCH_RE = /^(\s*)(else|and)(?:[ \t]+(.+?))?[ \t]*$/d;
+const BLOCK_END_RE = /^[ \t]*end[ \t]*$/;
 
 export interface SequenceTokens {
   actors: ActorToken[];
@@ -50,6 +53,9 @@ export function tokenizeSequence(text: string): SequenceTokens {
   const notes: NoteToken[] = [];
   const blocks: BlockToken[] = [];
 
+  // 制御ブロックはネストし得るのでスタックで対応付ける。end で閉じた時点で確定する
+  const blockStack: Omit<BlockToken, "endLineRange">[] = [];
+
   let offset = 0;
   for (const line of text.split("\n")) {
     const base = offset;
@@ -76,10 +82,42 @@ export function tokenizeSequence(text: string): SequenceTokens {
       continue;
     }
 
-    const block = BLOCK_RE.exec(line);
-    if (block?.indices) {
-      const [start, end] = block.indices[2]!; // ラベルグループ
-      blocks.push({ label: block[2], labelRange: abs(base, start, end) });
+    const head = BLOCK_HEAD_RE.exec(line);
+    if (head?.indices) {
+      const kw = head.indices[2]!;
+      const labelIdx = head.indices[3]; // ラベルは省略可
+      blockStack.push({
+        type: head[2] as BlockType,
+        keywordRange: abs(base, kw[0], kw[1]),
+        label: head[3] ?? "",
+        labelRange: labelIdx ? abs(base, labelIdx[0], labelIdx[1]) : abs(base, kw[1], kw[1]),
+        headerLineRange: lineRange,
+        branches: [],
+      });
+      continue;
+    }
+
+    const branch = BLOCK_BRANCH_RE.exec(line);
+    if (branch?.indices) {
+      const top = blockStack[blockStack.length - 1];
+      if (top) {
+        const kw = branch.indices[2]!;
+        const labelIdx = branch.indices[3];
+        const b: BlockBranch = {
+          keyword: branch[2] as "else" | "and",
+          keywordRange: abs(base, kw[0], kw[1]),
+          label: branch[3] ?? "",
+          labelRange: labelIdx ? abs(base, labelIdx[0], labelIdx[1]) : abs(base, kw[1], kw[1]),
+          lineRange,
+        };
+        top.branches.push(b);
+      }
+      continue;
+    }
+
+    if (BLOCK_END_RE.test(line)) {
+      const top = blockStack.pop();
+      if (top) blocks.push({ ...top, endLineRange: lineRange });
       continue;
     }
 
@@ -123,6 +161,9 @@ export function tokenizeSequence(text: string): SequenceTokens {
     activationRange: m.activationRange,
     removeLines: [m.lineRange],
   }));
+
+  // end で閉じた順 (内側が先) で積まれるため、ヘッダ出現順 = loopText の描画順に整列する
+  blocks.sort((a, b) => a.headerLineRange.start - b.headerLineRange.start);
 
   return { actors, messages, notes, blocks };
 }
