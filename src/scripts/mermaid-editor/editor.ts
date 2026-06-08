@@ -16,7 +16,7 @@ import {
 } from "./core/structure";
 import { addBranchEdits, setBlockTypeEdits, unwrapBlockEdits, wrapInBlockEdits } from "./core/source/block";
 import { hasActivationMarker, type BlockType, type EditableElement, type NotePlacement, type SourceRange, type TextEdit } from "./core/types";
-import { drawOverlay } from "./ui/overlay";
+import { drawOverlay, type OverlayCallbacks } from "./ui/overlay";
 
 // オーケストレータ: テキスト (正本) を中心に 3 モデルを再構築し、
 // 編集を surgical に書き戻す。編集履歴は History で一元管理する。
@@ -36,6 +36,7 @@ export interface EditorElements {
 
 export class Editor {
   private elements: EditableElement[] = [];
+  private overlayActive = false; // オーバーレイが編集モードで表示中か (リサイズ再配置の可否)
   private readonly history = new History();
 
   constructor(private readonly dom: EditorElements) {
@@ -48,6 +49,21 @@ export class Editor {
         void this.rebuild();
       }, 200);
     });
+
+    // 描画後にウィンドウ/コンテナがリサイズされると SVG がレスポンシブにスケールし、
+    // 描画時の座標で固定された当たり判定がずれる。サイズ変化を監視し、図は再描画せず
+    // オーバーレイ (当たり判定) だけ現在の SVG 位置へ貼り直す。rAF で連続発火を間引く。
+    if (typeof ResizeObserver !== "undefined") {
+      let raf: number | undefined;
+      const ro = new ResizeObserver(() => {
+        if (raf !== undefined) return;
+        raf = window.requestAnimationFrame(() => {
+          raf = undefined;
+          this.redrawOverlay();
+        });
+      });
+      ro.observe(dom.stage);
+    }
 
     // Undo / Redo のキーボードショートカット (テキストエリアの標準 undo も統一)
     window.addEventListener("keydown", (e) => {
@@ -136,6 +152,7 @@ export class Editor {
     const err = await parseError(text);
     if (err) {
       // 不正な構文では編集モードに入らず、直前の図を残してエラーを表示する
+      this.overlayActive = false;
       this.dom.overlay.replaceChildren();
       this.showError(err);
       return;
@@ -144,7 +161,19 @@ export class Editor {
     const svg = await renderInto(this.dom.diagram, text);
     const adapter = pickAdapter(text);
     this.elements = adapter ? adapter.build(text, svg) : [];
-    drawOverlay(this.dom.overlay, this.dom.stage, this.elements, {
+    this.overlayActive = true;
+    drawOverlay(this.dom.overlay, this.dom.stage, this.elements, this.overlayCallbacks());
+  }
+
+  /** 図を再描画せず、現在の要素でオーバーレイ (当たり判定) だけ貼り直す (リサイズ追従) */
+  private redrawOverlay(): void {
+    if (!this.overlayActive) return; // エラー表示中などは貼り直さない
+    drawOverlay(this.dom.overlay, this.dom.stage, this.elements, this.overlayCallbacks());
+  }
+
+  /** オーバーレイ操作のコールバック (rebuild / redrawOverlay で共用) */
+  private overlayCallbacks(): OverlayCallbacks {
+    return {
       onApply: (el, changes) => void this.apply(el, changes),
       onAddEdge: (from, to) => void this.addEdge(from, to),
       onAddConnectedNode: (from) => void this.addConnectedNode(from),
@@ -162,7 +191,7 @@ export class Editor {
       onAddBranch: (el) => void this.addBranch(el),
       onAddNote: (placement, actorIds, anchor) => void this.addNote(placement, actorIds, anchor),
       onSetNotePlacement: (el, placement, actorIds) => void this.setNotePlacement(el, placement, actorIds),
-    });
+    };
   }
 
   /** 要素を削除する (ノードは接続エッジも巻き込むカスケード削除) */
