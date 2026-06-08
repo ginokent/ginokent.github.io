@@ -344,27 +344,10 @@ export function drawOverlay(
         label: "種別を変更 ▸",
         onSelect: () => setActive(openMenu(overlayEl, anchor(), hostRect(), blockTypeActions(el))),
       });
-      // 分岐 (else/and) の追加は alt/par のみ
+      // 分岐 (else/and) の追加は alt/par のみ。分岐ラベルの編集はラベル自体 (kind "branch")
+      // を直接クリックして行う (sectionTitle にアンカーするため入力欄が正しい位置に出る)
       if (block.type === "alt") a.push({ label: "else を追加", onSelect: () => cb.onAddBranch(el) });
       else if (block.type === "par") a.push({ label: "and を追加", onSelect: () => cb.onAddBranch(el) });
-      // 分岐ラベルの編集 (分岐があるとき)。SVG に出ないため branchN フィールドを編集する
-      if (block.branches.length > 0) {
-        a.push({
-          label: `${block.branches[0].keyword} を編集 ▸`,
-          onSelect: () =>
-            setActive(
-              openMenu(
-                overlayEl,
-                anchor(),
-                hostRect(),
-                block.branches.map((b, i) => ({
-                  label: `${b.keyword} ${b.label || "(空)"}`,
-                  onSelect: () => edit(el, `branch${i}`, anchor),
-                })),
-              ),
-            ),
-        });
-      }
       a.push({ label: "ブロックを解除 (囲みを残さない)", onSelect: () => cb.onUnwrapBlock(el) });
     }
     if (el.kind === "note" && el.placementRange) {
@@ -543,16 +526,19 @@ export function drawOverlay(
       wire(band, el, () => el.lineEl!.getBoundingClientRect());
     }
 
-    const rect = el.el.getBoundingClientRect();
-    const hit = document.createElement("div");
-    hit.className = "hit";
-    hit.style.left = `${rect.left - overlayRect.left}px`;
-    hit.style.top = `${rect.top - overlayRect.top}px`;
-    hit.style.width = `${rect.width}px`;
-    hit.style.height = `${rect.height}px`;
-    hit.title = `${el.id}: クリックでメニュー / ダブルクリックでラベル編集`;
-    overlayEl.append(hit);
-    wire(hit, el, () => el.el.getBoundingClientRect());
+    // el 本体に加え、追加クリック領域 (ブロックの alt タブ等) があれば同じ要素へ配線する
+    for (const hitEl of [el.el, ...(el.extraHits ?? [])]) {
+      const rect = hitEl.getBoundingClientRect();
+      const hit = document.createElement("div");
+      hit.className = "hit";
+      hit.style.left = `${rect.left - overlayRect.left}px`;
+      hit.style.top = `${rect.top - overlayRect.top}px`;
+      hit.style.width = `${rect.width}px`;
+      hit.style.height = `${rect.height}px`;
+      hit.title = `${el.id}: クリックでメニュー / ダブルクリックでラベル編集`;
+      overlayEl.append(hit);
+      wire(hit, el, () => hitEl.getBoundingClientRect());
+    }
   }
 }
 
