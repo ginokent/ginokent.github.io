@@ -315,28 +315,7 @@ export function drawOverlay(
             : { label: "矢印の向きを入れ替える", onSelect: () => cb.onReverse(el) },
         );
       }
-      // 始点をこのメッセージとし、終点メッセージをクリックで指定して囲む
-      a.push({
-        label: "ブロックで囲む ▸",
-        onSelect: () =>
-          setActive(
-            openMenu(
-              overlayEl,
-              anchor(),
-              hostRect(),
-              BLOCK_TYPES.map((t) => ({
-                label: t.name,
-                onSelect: () =>
-                  startPickEl(
-                    `${t.name} で囲む終端のメッセージをクリック (Esc で取消)`,
-                    (e) => e.kind === "message",
-                    (to) => cb.onWrapBlock(el, to, t.type),
-                    hitEl,
-                  ),
-              })),
-            ),
-          ),
-      });
+      addWrapInBlock(a, el, anchor, hitEl);
     }
     if (el.kind === "block" && el.block) {
       const block = el.block;
@@ -355,6 +334,7 @@ export function drawOverlay(
         label: "配置を変更 ▸",
         onSelect: () => setActive(openMenu(overlayEl, anchor(), hostRect(), notePlacementActions(el))),
       });
+      addWrapInBlock(a, el, anchor, hitEl);
     }
     addMove(a, el);
     addRemove(a, el);
@@ -437,6 +417,33 @@ export function drawOverlay(
     if (!MOVABLE_KINDS.has(el.kind) || !el.removeLines || el.removeLines.length === 0) return;
     actions.push({ label: "1 行上に移動", onSelect: () => cb.onMoveLine(el, "up") });
     actions.push({ label: "1 行下に移動", onSelect: () => cb.onMoveLine(el, "down") });
+  }
+
+  // 始点をこの要素とし、終端の要素 (メッセージ/ノート) をクリックで指定して囲む。
+  // wrapInBlockEdits は行範囲で動くため、メッセージ・ノートいずれも (混在でも) 囲める
+  const isWrappable = (e: EditableElement) => e.kind === "message" || e.kind === "note";
+  function addWrapInBlock(actions: MenuAction[], el: EditableElement, anchor: () => DOMRect, hitEl: Element): void {
+    actions.push({
+      label: "ブロックで囲む ▸",
+      onSelect: () =>
+        setActive(
+          openMenu(
+            overlayEl,
+            anchor(),
+            hostRect(),
+            BLOCK_TYPES.map((t) => ({
+              label: t.name,
+              onSelect: () =>
+                startPickEl(
+                  `${t.name} で囲む終端の要素 (メッセージかノート) をクリック (Esc で取消)`,
+                  isWrappable,
+                  (to) => cb.onWrapBlock(el, to, t.type),
+                  hitEl,
+                ),
+            })),
+          ),
+        ),
+    });
   }
 
   const wire = (hitEl: Element, el: EditableElement, anchor: () => DOMRect) => {
