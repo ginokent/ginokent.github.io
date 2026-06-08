@@ -1,4 +1,4 @@
-import type { TextEdit } from "./types";
+import type { SourceRange, TextEdit } from "./types";
 
 // 構造編集: 新しい要素 (ノード / エッジ) をテキストへ追加する。
 // 既存範囲を変更しないゼロ幅挿入として表現し、戦略 B と整合させる。
@@ -106,4 +106,62 @@ export function deleteLines(text: string, lineRanges: readonly TextEdit["range"]
     edits.push({ range: { start, end }, newText: "" });
   }
   return edits;
+}
+
+/** テキスト全行の範囲 (改行は含まない) を文書順で返す */
+export function allLineRanges(text: string): SourceRange[] {
+  const ranges: SourceRange[] = [];
+  let offset = 0;
+  for (const line of text.split("\n")) {
+    ranges.push({ start: offset, end: offset + line.length });
+    offset += line.length + 1;
+  }
+  return ranges;
+}
+
+const PARTICIPANT_RE = /^\s*(?:participant|actor)\b/;
+
+/**
+ * 新しい participant/actor 宣言を、既存の宣言群の直後へ挿入する TextEdit を返す。
+ * 宣言が無ければ図ヘッダ (最初の有意行) の直後、それも無ければ文末へ追記する。
+ * 宣言を上にまとめることで、メッセージの間に紛れ込まない。
+ */
+export function participantInsertEdit(text: string, statement: string): TextEdit {
+  let anchor: SourceRange | null = null;
+  let header: SourceRange | null = null;
+  for (const r of allLineRanges(text)) {
+    const line = text.slice(r.start, r.end);
+    const t = line.trim();
+    if (!header && t !== "" && !t.startsWith("%%")) header = r;
+    if (PARTICIPANT_RE.test(line)) anchor = r;
+  }
+  if (anchor) return insertStatement(text, anchor, "after", statement);
+  // 宣言が無い場合はヘッダ直後へ。ヘッダ自身は無インデントなので本文インデントを使う
+  if (header) return { range: { start: header.end, end: header.end }, newText: `\n${INDENT}${statement}` };
+  return appendStatement(text, statement);
+}
+
+/**
+ * 指定行を 1 行上 ("up") / 下 ("down") の行と入れ替える TextEdit 群を返す。
+ * 各行のテキスト (インデント込み) ごと入れ替えるため、文の並び順だけが変わる。
+ * 範囲外、または図ヘッダ (最初の有意行) より上へ動かす場合は null を返す。
+ */
+export function moveLineEdit(text: string, lineRange: SourceRange, dir: "up" | "down"): TextEdit[] | null {
+  const lines = allLineRanges(text);
+  const idx = lines.findIndex((r) => r.start <= lineRange.start && lineRange.start <= r.end);
+  if (idx === -1) return null;
+  const j = dir === "up" ? idx - 1 : idx + 1;
+  if (j < 0 || j >= lines.length) return null;
+  const headerIdx = lines.findIndex((r) => {
+    const t = text.slice(r.start, r.end).trim();
+    return t !== "" && !t.startsWith("%%");
+  });
+  if (idx <= headerIdx) return null; // ヘッダ自身は動かさない
+  if (dir === "up" && j <= headerIdx) return null; // ヘッダの上には出さない
+  const a = lines[idx];
+  const b = lines[j];
+  return [
+    { range: a, newText: text.slice(b.start, b.end) },
+    { range: b, newText: text.slice(a.start, a.end) },
+  ];
 }

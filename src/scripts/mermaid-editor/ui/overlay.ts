@@ -70,7 +70,17 @@ export interface OverlayCallbacks {
   onUnwrapBlock(el: EditableElement): void;
   onSetBlockType(el: EditableElement, type: BlockType): void;
   onAddBranch(el: EditableElement): void;
+  onMoveLine(el: EditableElement, dir: "up" | "down"): void;
 }
+
+// 1 文 = 1 行で並び替えられる要素の種別。ブロック (複数行) や lifeline (文ではない) は除く
+const MOVABLE_KINDS: ReadonlySet<EditableElement["kind"]> = new Set([
+  "node",
+  "edge",
+  "actor",
+  "message",
+  "note",
+]);
 
 /** 制御ブロックの種別候補 (種別 → 表示名) */
 const BLOCK_TYPES: ReadonlyArray<{ type: BlockType; name: string }> = [
@@ -215,6 +225,7 @@ export function drawOverlay(
         });
       }
       if (el.endpoints) a.push({ label: "矢印の向きを入れ替える", onSelect: () => cb.onReverse(el) });
+      addMove(a, el);
       addRemove(a, el);
       return a;
     }
@@ -353,6 +364,7 @@ export function drawOverlay(
         onSelect: () => setActive(openMenu(overlayEl, anchor(), stageRect, notePlacementActions(el))),
       });
     }
+    addMove(a, el);
     addRemove(a, el);
     return a;
   };
@@ -426,6 +438,13 @@ export function drawOverlay(
     if (el.removeLines && el.removeLines.length > 0) {
       actions.push({ label: "削除", onSelect: () => cb.onRemove(el) });
     }
+  }
+
+  // 並び替え (1 文 = 1 行の入れ替え)。端や図ヘッダ際では editor 側が no-op で弾く
+  function addMove(actions: MenuAction[], el: EditableElement): void {
+    if (!MOVABLE_KINDS.has(el.kind) || !el.removeLines || el.removeLines.length === 0) return;
+    actions.push({ label: "1 行上に移動", onSelect: () => cb.onMoveLine(el, "up") });
+    actions.push({ label: "1 行下に移動", onSelect: () => cb.onMoveLine(el, "down") });
   }
 
   const wire = (hitEl: Element, el: EditableElement, anchor: () => DOMRect) => {

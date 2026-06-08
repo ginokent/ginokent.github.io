@@ -1,4 +1,4 @@
-import { INDENT, deleteLines, insertStatement } from "../structure";
+import { INDENT, allLineRanges, deleteLines, insertStatement } from "../structure";
 import type { BlockToken, BlockType, SourceRange, TextEdit } from "../types";
 import { tokenizeSequence } from "./sequence";
 
@@ -103,17 +103,6 @@ export function addBranchEdits(text: string, headerStart: number): TextEdit[] {
 
 function findBlock(text: string, headerStart: number): BlockToken | undefined {
   return tokenizeSequence(text).blocks.find((b) => b.headerLineRange.start === headerStart);
-}
-
-/** テキスト全行の範囲 (改行は含まない) を文書順で返す */
-function allLineRanges(text: string): SourceRange[] {
-  const ranges: SourceRange[] = [];
-  let offset = 0;
-  for (const line of text.split("\n")) {
-    ranges.push({ start: offset, end: offset + line.length });
-    offset += line.length + 1;
-  }
-  return ranges;
 }
 
 function leadingWhitespace(text: string, r: SourceRange): string {
