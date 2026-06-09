@@ -2,11 +2,17 @@ import type { EditableElement } from "../core/types";
 
 // インライン編集: 選択要素の上に入力欄を重ね、単一フィールドを直接編集する。
 // ダブルクリック (ラベル) およびメニュー項目選択から呼ばれる。
+//
+// ラベル (fieldName === "label") は複数行編集を許す。Shift+Enter で改行を挿入し、
+// 確定時に改行を <br/> へ変換して書き戻す。編集開始時は逆に <br/> を改行へ戻して表示する。
+// id 等の識別子は単一行のまま (改行は不可)。
 
 export interface EditCallbacks {
   /** 変更されたフィールド (name → 新値) を適用する */
   onApply(el: EditableElement, changes: Record<string, string>): void;
 }
+
+const BR_RE = /<br\s*\/?>/giu; // <br> / <br/> / <br /> いずれも対象
 
 /** 要素の指定フィールドをインライン編集する。閉じる関数を返す */
 export function openInlineEditor(
@@ -20,13 +26,25 @@ export function openInlineEditor(
   const field = el.fields.find((f) => f.name === fieldName);
   if (!field) return () => {};
 
-  const input = document.createElement("input");
+  const multiline = fieldName === "label"; // ラベルだけ改行可。id 等は単一行
+  const input = document.createElement(multiline ? "textarea" : "input") as HTMLTextAreaElement | HTMLInputElement;
   input.className = "inline-input";
   input.style.left = `${anchor.left - hostRect.left}px`;
   input.style.top = `${anchor.top - hostRect.top}px`;
   input.style.width = `${Math.max(anchor.width, 60)}px`;
-  input.style.height = `${anchor.height}px`;
-  input.value = field.value;
+
+  // 表示は <br/> を実改行に、書き戻しは実改行を <br/> に変換する
+  const toDisplay = (v: string) => (multiline ? v.replace(BR_RE, "\n") : v);
+  const toSource = (v: string) => (multiline ? v.replace(/\r?\n/gu, "<br/>") : v);
+  input.value = toDisplay(field.value);
+
+  // textarea は内容に合わせて高さを伸ばす (input は要素の高さに合わせる)
+  const autoGrow = () => {
+    input.style.height = "auto";
+    input.style.height = `${Math.max(input.scrollHeight, anchor.height)}px`;
+  };
+  if (multiline) input.addEventListener("input", autoGrow);
+  else input.style.height = `${anchor.height}px`;
 
   let done = false;
   const close = () => {
@@ -36,14 +54,17 @@ export function openInlineEditor(
   };
   const commit = () => {
     if (done) return;
-    const value = input.value;
+    const raw = input.value;
     done = true;
     input.remove();
-    if (value !== field.value) cb.onApply(el, { [fieldName]: value });
+    // 表示テキストが変わったときだけ書き戻す (<br> 形の差異だけでは書き換えない)
+    if (raw !== toDisplay(field.value)) cb.onApply(el, { [fieldName]: toSource(raw) });
   };
 
-  input.addEventListener("keydown", (e) => {
+  input.addEventListener("keydown", (ev: Event) => {
+    const e = ev as KeyboardEvent;
     if (e.key === "Enter") {
+      if (multiline && e.shiftKey) return; // Shift+Enter は改行を挿入 (textarea の既定動作)
       e.preventDefault();
       commit();
     } else if (e.key === "Escape") {
@@ -56,5 +77,6 @@ export function openInlineEditor(
   host.append(input);
   input.focus();
   input.select();
+  if (multiline) autoGrow();
   return close;
 }
