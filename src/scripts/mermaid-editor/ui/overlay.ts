@@ -619,27 +619,30 @@ export function drawOverlay(
       continue;
     }
 
+    // el 本体 + 追加要素 (折り返した行・ブロックの alt タブ等) の外接矩形。
+    // ホバー枠・メニュー・ラベル編集欄の anchor に使う (ライブ計測)
+    const hitEls: SVGGraphicsElement[] = [el.el, ...(el.extraHits ?? [])];
+    const bounds = () => unionRect(hitEls);
+
     // メッセージは矢印線にもクリック領域を張る (ラベルだけでなく線をクリックできる)。
     // 矢印はほぼ水平なので、画面座標で一定の太さの半透明バンドをオーバーレイ層に重ねる
     // (図の縮小率に依らず確実に太く見え、フローチャートのエッジと同等の操作感になる)。
     if (el.kind === "message" && el.lineEl) {
-      const r = el.lineEl.getBoundingClientRect();
+      const lr = el.lineEl.getBoundingClientRect();
       const band = document.createElement("div");
       band.className = "hit msg-line-hit";
-      band.style.left = `${r.left - overlayRect.left}px`;
-      band.style.top = `${r.top + r.height / 2 - MSG_BAND_PX / 2 - overlayRect.top}px`;
-      band.style.width = `${r.width}px`;
+      band.style.left = `${lr.left - overlayRect.left}px`;
+      band.style.top = `${lr.top + lr.height / 2 - MSG_BAND_PX / 2 - overlayRect.top}px`;
+      band.style.width = `${lr.width}px`;
       band.style.height = `${MSG_BAND_PX}px`;
       band.title = `${el.id}: クリックでメニュー`;
       overlayEl.append(band);
-      wire(band, el, () => el.lineEl!.getBoundingClientRect());
+      // 帯の anchor は矢印線でなくラベル (bounds)。矢印をダブルクリックしても入力欄が
+      // ラベルの位置に出る (矢印位置に出てズレるのを防ぐ)
+      wire(band, el, bounds);
     }
 
-    // el 本体 + 追加要素 (折り返した行・ブロックの alt タブ等) を 1 つの外接矩形にまとめ、
-    // ホバー枠が行ごとに分かれないようにする (複数行ラベルでも 1 つの大きな枠で囲む)。
-    // 位置・anchor は全要素の外接矩形をライブ計測する
-    const hitEls: SVGGraphicsElement[] = [el.el, ...(el.extraHits ?? [])];
-    const bounds = () => unionRect(hitEls);
+    // ホバー枠が行ごとに分かれないよう、外接矩形を 1 つのヒット div にまとめる
     const r = bounds();
     const hit = document.createElement("div");
     hit.className = "hit";
