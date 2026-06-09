@@ -127,6 +127,33 @@ export function lineRangeAt(text: string, offset: number): SourceRange | undefin
   return allLineRanges(text).find((r) => r.start <= offset && offset <= r.end);
 }
 
+const AUTONUMBER_RE = /^\s*autonumber\b/u;
+
+/**
+ * sequenceDiagram の autonumber を切り替える TextEdit を返す。
+ * 既にあれば全ての autonumber 行を削除 (解除)、無ければ図ヘッダ直後へ挿入 (有効化)。
+ * 挿入インデントは本文 (ヘッダ次の有意行) に合わせる。
+ */
+export function toggleAutonumberEdits(text: string): TextEdit[] {
+  const lines = allLineRanges(text);
+  const existing = lines.filter((r) => AUTONUMBER_RE.test(text.slice(r.start, r.end)));
+  if (existing.length > 0) return deleteLines(text, existing); // 解除
+  const headerIdx = lines.findIndex((r) => {
+    const t = text.slice(r.start, r.end).trim();
+    return t !== "" && !t.startsWith("%%");
+  });
+  if (headerIdx === -1) return [];
+  let indent = INDENT;
+  for (let k = headerIdx + 1; k < lines.length; k++) {
+    const t = text.slice(lines[k].start, lines[k].end);
+    if (t.trim() !== "") {
+      indent = /^[ \t]*/u.exec(t)?.[0] ?? INDENT;
+      break;
+    }
+  }
+  return [insertStatement(text, lines[headerIdx], "after", "autonumber", indent)];
+}
+
 const PARTICIPANT_RE = /^\s*(?:participant|actor)\b/;
 
 /**
