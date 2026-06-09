@@ -15,6 +15,7 @@ import {
   lineRangeAt,
   moveLineEdit,
   participantInsertEdit,
+  toggleAutonumberEdits,
 } from "./core/structure";
 import { addBranchEdits, setBlockTypeEdits, unwrapBlockEdits, wrapInBlockEdits } from "./core/source/block";
 import { hasActivationMarker, type BlockType, type EditableElement, type NotePlacement, type SourceRange, type TextEdit } from "./core/types";
@@ -41,7 +42,11 @@ export class Editor {
   private overlayActive = false; // オーバーレイが編集モードで表示中か (リサイズ再配置の可否)
   private readonly history = new History();
 
-  constructor(private readonly dom: EditorElements) {
+  constructor(
+    private readonly dom: EditorElements,
+    /** 図の再構築 (図種変化を含む) ごとに呼ぶ。ツールバーの図種別表示更新に使う */
+    private readonly onRender?: () => void,
+  ) {
     // テキスト直接編集にも追従し、履歴へ記録する (入力デバウンス)
     let timer: number | undefined;
     dom.source.addEventListener("input", () => {
@@ -157,6 +162,7 @@ export class Editor {
       this.overlayActive = false;
       this.dom.overlay.replaceChildren();
       this.showError(err);
+      this.onRender?.();
       return;
     }
     this.clearError();
@@ -165,6 +171,26 @@ export class Editor {
     this.elements = adapter ? adapter.build(text, svg) : [];
     this.overlayActive = true;
     drawOverlay(this.dom.overlay, this.dom.stage, this.elements, this.overlayCallbacks());
+    this.onRender?.();
+  }
+
+  /** 現在の図種 (ツールバーの図種別ボタン表示に使う)。未対応図種は null */
+  diagramType(): "flowchart" | "sequence" | null {
+    const kw = firstKeyword(this.dom.source.value);
+    if (kw === "flowchart" || kw === "graph") return "flowchart";
+    if (kw === "sequenceDiagram") return "sequence";
+    return null;
+  }
+
+  /** sequenceDiagram で autonumber が有効か */
+  autonumberEnabled(): boolean {
+    return /^\s*autonumber\b/mu.test(this.dom.source.value);
+  }
+
+  /** autonumber の有効/解除を切り替える (sequence 以外では何もしない) */
+  async toggleAutonumber(): Promise<void> {
+    if (this.diagramType() !== "sequence") return;
+    await this.commitEdits(toggleAutonumberEdits(this.dom.source.value));
   }
 
   /** 図を再描画せず、現在の要素でオーバーレイ (当たり判定) だけ貼り直す (リサイズ追従) */

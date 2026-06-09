@@ -31,7 +31,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           <h2>図 (クリック: メニュー / ダブルクリック: ラベル)</h2>
           <div class="toolbar">
             <button id="add-element" type="button" title="要素を追加 (flowchart: ノード / sequence: 参加者)">＋ 追加</button>
-            <button id="direction" type="button" title="方向を切替 (flowchart: TD→LR→RL→BT)">⟲ 向き</button>
+            <button id="direction" type="button" data-diagram="flowchart" title="方向を切替 (flowchart: TD→LR→RL→BT)">⟲ 向き</button>
+            <button id="autonumber" type="button" data-diagram="sequence" title="連番 (autonumber) の有効/解除を切り替える">① 連番</button>
             <button id="undo" type="button" title="元に戻す (Ctrl/Cmd+Z)">↶ Undo</button>
             <button id="redo" type="button" title="やり直す (Ctrl/Cmd+Shift+Z)">↷ Redo</button>
             <span class="toolbar-sep"></span>
@@ -67,16 +68,31 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     return el as T;
   };
 
-  const editor = new Editor({
-    source: $<HTMLTextAreaElement>('source'),
-    diagram: $('diagram'),
-    overlay: $('overlay'),
-    stage: $('stage'),
-    error: $('error'),
-  });
+  // 図種に応じてツールバーの図種別ボタン (data-diagram) を出し分け、連番ボタンの状態を更新する
+  function syncToolbar(): void {
+    const type = editor.diagramType();
+    for (const btn of document.querySelectorAll<HTMLElement>('[data-diagram]')) {
+      btn.style.display = btn.dataset.diagram === type ? '' : 'none';
+    }
+    const an = $('autonumber');
+    an.textContent = `① 連番 ${editor.autonumberEnabled() ? 'オン' : 'オフ'}`;
+    an.setAttribute('aria-pressed', String(editor.autonumberEnabled()));
+  }
+
+  const editor = new Editor(
+    {
+      source: $<HTMLTextAreaElement>('source'),
+      diagram: $('diagram'),
+      overlay: $('overlay'),
+      stage: $('stage'),
+      error: $('error'),
+    },
+    syncToolbar, // 再構築 (図種変化を含む) ごとにツールバーを更新
+  );
 
   $('add-element').addEventListener('click', () => void editor.addElement());
   $('direction').addEventListener('click', () => void editor.cycleDirection());
+  $('autonumber').addEventListener('click', () => void editor.toggleAutonumber());
   $('undo').addEventListener('click', () => void editor.undo());
   $('redo').addEventListener('click', () => void editor.redo());
 
