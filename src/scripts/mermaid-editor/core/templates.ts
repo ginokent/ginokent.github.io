@@ -1,5 +1,6 @@
 // 図種ごとのテンプレート。ツールバーのボタンから全文置換に使う。
 // 編集オーバーレイに対応する図種 (flowchart / sequence) のみを用意する。
+// 先頭 (TEMPLATES[0]) が初回起動時の既定図 (main.ts の load() フォールバック)。
 
 export interface Template {
   key: string; // 図種キー
@@ -8,15 +9,6 @@ export interface Template {
 }
 
 export const TEMPLATES: Template[] = [
-  {
-    key: "flowchart",
-    label: "フローチャート",
-    text: `flowchart TD
-  A[開始] --> B{条件判定}
-  B -->|はい| C([完了])
-  B -->|いいえ| D[やり直す]
-  D --> A`,
-  },
   {
     key: "sequence",
     label: "シーケンス図",
@@ -47,5 +39,14 @@ export const TEMPLATES: Template[] = [
     C->>RS: API request<br/>Authorization: Bearer access_token
     RS->>RS: access_token を検証
     RS-->>C: protected resource`,
+  },
+  {
+    key: "flowchart",
+    label: "フローチャート",
+    text: `flowchart TD
+  A[開始] --> B{条件判定}
+  B -->|はい| C([完了])
+  B -->|いいえ| D[やり直す]
+  D --> A`,
   },
 ];

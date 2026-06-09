@@ -1,7 +1,6 @@
 import type {
   ActorToken,
   BlockToken,
-  EdgeLabelToken,
   EdgeLabelVisual,
   EdgeToken,
   EdgeVisual,
@@ -69,6 +68,7 @@ export function correlateNodes(
 /**
  * SVG からエッジラベルの g 要素を抽出する (非空テキストのみ、辺の順)。
  * 未ラベルの辺も空の g.edgeLabel を生む (transform NaN) ため除外する。
+ * 編集はエッジ要素が担う (この g はエッジのクリック領域として添えるだけ)。
  */
 export function extractEdgeLabelVisuals(svg: SVGSVGElement): EdgeLabelVisual[] {
   const visuals: EdgeLabelVisual[] = [];
@@ -77,35 +77,6 @@ export function extractEdgeLabelVisuals(svg: SVGSVGElement): EdgeLabelVisual[] {
     if (text) visuals.push({ text, el });
   }
   return visuals;
-}
-
-/**
- * エッジラベルを「表示テキスト一致 + 出現順」で突き合わせる。
- * SVG に id が無いため、トークンの label と一致する未消費の g.edgeLabel を
- * 順に割り当てる。これにより未ラベル辺や (将来の) インラインラベルが
- * 混在しても整合する。
- */
-export function correlateEdgeLabels(
-  visuals: readonly EdgeLabelVisual[],
-  tokens: readonly EdgeLabelToken[],
-): EditableElement[] {
-  const remaining = [...visuals];
-  const result: EditableElement[] = [];
-  for (let k = 0; k < tokens.length; k++) {
-    const token = tokens[k];
-    // `<br>`・折り返しで描画テキストとソースがずれるため、normLabel で正規化して一致させる
-    // (g.edgeLabel は 1 つの箱なのでグルーピングは不要。シーケンスのラベルと同じ扱い)
-    const idx = remaining.findIndex((v) => normLabel(v.text) === normLabel(token.label));
-    if (idx === -1) continue; // 対応する SVG ラベルが見つからない
-    const [v] = remaining.splice(idx, 1);
-    result.push({
-      id: `edgeLabel-${k}`,
-      kind: "edgeLabel",
-      el: v.el,
-      fields: [{ name: "label", value: token.label, ranges: [token.labelRange] }],
-    });
-  }
-  return result;
 }
 
 // ---- エッジ (パス) ----
@@ -142,10 +113,15 @@ export function parseEdgePathId(
   return null;
 }
 
-/** エッジを (from, to, index) で突き合わせ、from/to (と任意の label) を編集フィールドにする */
+/**
+ * エッジを (from, to, index) で突き合わせ、from/to (と任意の label) を編集フィールドにする。
+ * ラベル付きエッジには対応する g.edgeLabel を extraHits として添え、ラベルをクリックしても
+ * エッジ本体と同じメニュー/編集になるようにする (描画テキストとソースは normLabel で一致)。
+ */
 export function correlateEdges(
   visuals: readonly EdgeVisual[],
   tokens: readonly EdgeToken[],
+  labelVisuals: readonly EdgeLabelVisual[] = [],
 ): EditableElement[] {
   const key = (f: string, t: string, i: number) => `${f} ${t} ${i}`;
   const tokenByKey = new Map(tokens.map((e) => [key(e.fromId, e.toId, e.index), e]));
@@ -169,6 +145,16 @@ export function correlateEdges(
       operatorRange: token.linkRange,
       endpoints: { from: token.fromRefRange, to: token.toRefRange },
     });
+  }
+  // ラベル付きエッジに g.edgeLabel をクリック領域として添える (表示順 + テキスト一致で割当)
+  const remainingLabels = [...labelVisuals];
+  for (const e of result) {
+    const labelField = e.fields.find((f) => f.name === "label");
+    if (!labelField) continue;
+    const idx = remainingLabels.findIndex((lv) => normLabel(lv.text) === normLabel(labelField.value));
+    if (idx === -1) continue;
+    const [lv] = remainingLabels.splice(idx, 1);
+    e.extraHits = [lv.el];
   }
   return result;
 }
