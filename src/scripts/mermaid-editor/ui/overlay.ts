@@ -635,20 +635,32 @@ export function drawOverlay(
       wire(band, el, () => el.lineEl!.getBoundingClientRect());
     }
 
-    // el 本体に加え、追加クリック領域 (ブロックの alt タブ等) があれば同じ要素へ配線する
-    for (const hitEl of [el.el, ...(el.extraHits ?? [])]) {
-      const rect = hitEl.getBoundingClientRect();
-      const hit = document.createElement("div");
-      hit.className = "hit";
-      hit.style.left = `${rect.left - overlayRect.left}px`;
-      hit.style.top = `${rect.top - overlayRect.top}px`;
-      hit.style.width = `${rect.width}px`;
-      hit.style.height = `${rect.height}px`;
-      hit.title = `${el.id}: クリックでメニュー / ダブルクリックでラベル編集`;
-      overlayEl.append(hit);
-      wire(hit, el, () => hitEl.getBoundingClientRect());
-    }
+    // el 本体 + 追加要素 (折り返した行・ブロックの alt タブ等) を 1 つの外接矩形にまとめ、
+    // ホバー枠が行ごとに分かれないようにする (複数行ラベルでも 1 つの大きな枠で囲む)。
+    // 位置・anchor は全要素の外接矩形をライブ計測する
+    const hitEls: SVGGraphicsElement[] = [el.el, ...(el.extraHits ?? [])];
+    const bounds = () => unionRect(hitEls);
+    const r = bounds();
+    const hit = document.createElement("div");
+    hit.className = "hit";
+    hit.style.left = `${r.left - overlayRect.left}px`;
+    hit.style.top = `${r.top - overlayRect.top}px`;
+    hit.style.width = `${r.width}px`;
+    hit.style.height = `${r.height}px`;
+    hit.title = `${el.id}: クリックでメニュー / ダブルクリックでラベル編集`;
+    overlayEl.append(hit);
+    wire(hit, el, bounds);
   }
+}
+
+/** 複数要素の外接矩形 (画面座標)。単一要素ならその矩形そのもの */
+function unionRect(els: readonly Element[]): DOMRect {
+  const rs = els.map((e) => e.getBoundingClientRect());
+  const left = Math.min(...rs.map((r) => r.left));
+  const top = Math.min(...rs.map((r) => r.top));
+  const right = Math.max(...rs.map((r) => r.right));
+  const bottom = Math.max(...rs.map((r) => r.bottom));
+  return { left, top, right, bottom, width: right - left, height: bottom - top, x: left, y: top, toJSON() {} } as DOMRect;
 }
 
 /** クリック地点をアンカーにするための幅 0 の矩形 (メニューの配置基準に使う) */
