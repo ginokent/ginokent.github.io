@@ -2,7 +2,6 @@ import {
   correlateActors,
   correlateBlocks,
   correlateBranches,
-  correlateEdgeLabels,
   correlateEdges,
   correlateMessages,
   correlateNodes,
@@ -35,8 +34,7 @@ const flowchartAdapter: DiagramAdapter = {
     const nodeIds = new Set(nodeVisuals.map((v) => v.id));
     return [
       ...correlateNodes(nodeVisuals, t.nodes),
-      ...correlateEdges(extractEdgeVisuals(svg, nodeIds), t.edges),
-      ...correlateEdgeLabels(extractEdgeLabelVisuals(svg), t.edgeLabels),
+      ...correlateEdges(extractEdgeVisuals(svg, nodeIds), t.edges, extractEdgeLabelVisuals(svg)),
     ];
   },
 };

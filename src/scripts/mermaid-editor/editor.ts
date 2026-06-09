@@ -185,6 +185,7 @@ export class Editor {
       onSetShape: (el, open, close) => void this.setShape(el, open, close),
       onSetOperator: (el, op) => void this.setOperator(el, op),
       onReverse: (el) => void this.reverse(el),
+      onAddEdgeLabel: (el) => void this.addEdgeLabel(el),
       onReconnectMessage: (el, end, actorId) => void this.reconnectMessage(el, end, actorId),
       onSetActivation: (el, sign) => void this.setActivation(el, sign),
       onMoveLine: (el, dir) => void this.moveLine(el, dir),
@@ -360,6 +361,13 @@ export class Editor {
       { range: from, newText: toId },
       { range: to, newText: fromId },
     ]);
+  }
+
+  /** ラベルの無いエッジにラベルを追加する (演算子直後に |ラベル| を挿入する) */
+  async addEdgeLabel(el: EditableElement): Promise<void> {
+    if (!el.operatorRange) return;
+    const at = el.operatorRange.end; // 例: A --> B → A -->|ラベル| B
+    await this.commitEdits([{ range: { start: at, end: at }, newText: "|ラベル|" }]);
   }
 
   /** メッセージの起動/終了 ([+-]?) を切り替える (sign は "+"/"-"/"") */

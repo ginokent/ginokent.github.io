@@ -69,6 +69,7 @@ export interface OverlayCallbacks {
   onSetShape(el: EditableElement, open: string, close: string): void;
   onSetOperator(el: EditableElement, op: string): void;
   onReverse(el: EditableElement): void;
+  onAddEdgeLabel(el: EditableElement): void;
   onReconnectMessage(el: EditableElement, end: "from" | "to", actorId: string): void;
   onSetActivation(el: EditableElement, sign: string): void;
   onAddNote(placement: NotePlacement, actorIds: string[], anchorId: string | null): void;
@@ -214,6 +215,7 @@ export function drawOverlay(
     if (el.kind === "edge") {
       const a: MenuAction[] = [];
       if (hasLabel(el)) a.push({ label: "ラベルを編集", onSelect: () => edit(el, "label", anchor) });
+      else a.push({ label: "ラベルを追加", onSelect: () => cb.onAddEdgeLabel(el) });
       a.push({
         label: "接続元を変更",
         onSelect: () =>
@@ -616,6 +618,20 @@ export function drawOverlay(
       const hit = makeEdgeHit(el.el);
       svg.append(hit);
       wire(hit, el, () => midpointClientRect(el.el));
+      // ラベル (g.edgeLabel) もエッジのクリック領域にする。クリックでエッジと同じメニュー、
+      // ダブルクリックでラベル編集 (入力欄はラベルの位置に出る)
+      for (const labelEl of el.extraHits ?? []) {
+        const r = labelEl.getBoundingClientRect();
+        const lhit = document.createElement("div");
+        lhit.className = "hit";
+        lhit.style.left = `${r.left - overlayRect.left}px`;
+        lhit.style.top = `${r.top - overlayRect.top}px`;
+        lhit.style.width = `${r.width}px`;
+        lhit.style.height = `${r.height}px`;
+        lhit.title = `${el.id}: クリックでメニュー / ダブルクリックでラベル編集`;
+        overlayEl.append(lhit);
+        wire(lhit, el, () => labelEl.getBoundingClientRect());
+      }
       continue;
     }
 
