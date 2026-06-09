@@ -93,7 +93,9 @@ export function correlateEdgeLabels(
   const result: EditableElement[] = [];
   for (let k = 0; k < tokens.length; k++) {
     const token = tokens[k];
-    const idx = remaining.findIndex((v) => v.text === token.label.trim());
+    // `<br>`・折り返しで描画テキストとソースがずれるため、normLabel で正規化して一致させる
+    // (g.edgeLabel は 1 つの箱なのでグルーピングは不要。シーケンスのラベルと同じ扱い)
+    const idx = remaining.findIndex((v) => normLabel(v.text) === normLabel(token.label));
     if (idx === -1) continue; // 対応する SVG ラベルが見つからない
     const [v] = remaining.splice(idx, 1);
     result.push({
@@ -199,34 +201,80 @@ function boxOf(textEl: SVGGraphicsElement): SVGGraphicsElement {
     : textEl;
 }
 
-/** SVG のアクター表示テキストを抽出する (上下 2 箇所をすべて返す。幾何は箱) */
-export function extractActorVisuals(svg: SVGSVGElement): TextVisual[] {
+/**
+ * text 要素群を所属する箱 (boxOf) ごとにまとめ、各箱の全行を結合した 1 visual にする。
+ * `<br/>` や折り返しで表示が複数 text に分割されても、箱単位で 1 要素として扱える
+ * (箱が全行を覆うのでどの行をクリックしても当たる)。文書順を保つ。
+ */
+function groupByBox(textEls: Iterable<SVGGraphicsElement>): TextVisual[] {
+  const byBox = new Map<SVGGraphicsElement, SVGGraphicsElement[]>();
+  const order: SVGGraphicsElement[] = [];
+  for (const t of textEls) {
+    const box = boxOf(t);
+    let arr = byBox.get(box);
+    if (!arr) {
+      arr = [];
+      byBox.set(box, arr);
+      order.push(box);
+    }
+    arr.push(t);
+  }
   const visuals: TextVisual[] = [];
-  for (const textEl of svg.querySelectorAll<SVGGraphicsElement>("text.actor")) {
-    const text = (textEl.textContent ?? "").trim();
-    if (text) visuals.push({ text, el: boxOf(textEl) });
+  for (const box of order) {
+    const text = byBox.get(box)!.map((e) => (e.textContent ?? "").trim()).join("");
+    if (text) visuals.push({ text, el: box });
   }
   return visuals;
 }
 
+/** SVG 要素の上端 y。line は y1 属性、path (自己メッセージのループ) は d の最初の座標 */
+export function svgTopY(el: Element): number {
+  const y1 = el.getAttribute("y1");
+  if (y1 != null) return parseFloat(y1);
+  const m = /[ML]\s*[-\d.]+[ ,]+([-\d.]+)/u.exec(el.getAttribute("d") ?? "");
+  return m ? parseFloat(m[1]) : NaN;
+}
+
 /**
- * SVG のメッセージ本文テキストを文書順で抽出し、同順の矢印線 (.messageLine*) を
- * 添える。メッセージ・本文・線はいずれも文書順で 1:1 対応するため添字で対応付ける。
+ * SVG のアクター表示テキストを抽出する (上下 2 箇所をすべて返す。幾何は箱)。
+ * `<br/>` 入り表示名は行ごとに別々の text.actor になるが、同じ箱にまとまるので結合する。
+ */
+export function extractActorVisuals(svg: SVGSVGElement): TextVisual[] {
+  return groupByBox(svg.querySelectorAll<SVGGraphicsElement>("text.actor"));
+}
+
+/**
+ * SVG のメッセージを文書順で抽出し、矢印線 (.messageLine*) を主として 1 メッセージ = 1 visual にする。
  *
- * 矢印は通常 `<line class="messageLine0/1">` だが、自己メッセージ (A->>A) はループを
- * `<path class="messageLine0">` で描画する。タグを限定すると自己メッセージの行が抜け、
- * 以降のメッセージで本文と線の添字がずれて当たり判定が別の矢印に乗ってしまうため、
- * タグを問わずクラスで拾う。
+ * 本文 (text.messageText) は `<br/>`・折り返しで複数 text に分割され、矢印線とは個数が
+ * 合わなくなる。そこで矢印線 1 本を 1 メッセージとし、本文断片は y 座標 (直下の矢印) で
+ * 各メッセージへ割り当てる。これにより本文行数に依らず矢印線と添字がずれない
+ * (自己メッセージのループは `<path class="messageLine0">` なのでタグを問わず拾う)。
+ * 先頭行を el、残りを extraEls (クリック領域用) とする。
  */
 export function extractMessageVisuals(svg: SVGSVGElement): TextVisual[] {
-  const lines = svg.querySelectorAll<SVGGraphicsElement>(".messageLine0, .messageLine1");
-  const visuals: TextVisual[] = [];
-  const texts = svg.querySelectorAll<SVGGraphicsElement>("text.messageText");
-  texts.forEach((el, k) => {
-    const text = (el.textContent ?? "").trim();
-    if (text) visuals.push({ text, el, lineEl: lines[k] });
+  const lines = [...svg.querySelectorAll<SVGGraphicsElement>(".messageLine0, .messageLine1")];
+  const texts = [...svg.querySelectorAll<SVGGraphicsElement>("text.messageText")].filter(
+    (e) => (e.textContent ?? "").trim() !== "",
+  );
+  const lineYs = lines.map(svgTopY);
+  const groups: SVGGraphicsElement[][] = lines.map(() => []);
+  for (const t of texts) {
+    const ty = parseFloat(t.getAttribute("y") ?? "NaN");
+    // 本文は矢印のすぐ上に描かれるので、その y 以下にある最初の矢印 = そのメッセージ
+    let k = lineYs.findIndex((ly) => ty <= ly);
+    if (k === -1) k = lines.length - 1; // どの矢印より下なら最後のメッセージ
+    if (k >= 0) groups[k].push(t);
+  }
+  return lines.map((lineEl, k) => {
+    const g = groups[k];
+    return {
+      text: g.map((e) => (e.textContent ?? "").trim()).join(""),
+      el: g[0] ?? lineEl,
+      lineEl,
+      extraEls: g.slice(1),
+    };
   });
-  return visuals;
 }
 
 /**
@@ -238,11 +286,12 @@ export function correlateActors(
   visuals: readonly TextVisual[],
   tokens: readonly ActorToken[],
 ): EditableElement[] {
-  const byText = new Map(tokens.map((t) => [t.display.trim(), t]));
+  // `<br/>`・折り返しで結合した表示名と一致させるため、空白・ハイフン・<br> を無視して比較する
+  const byNorm = new Map(tokens.map((t) => [normLabel(t.display), t]));
   const counts = new Map<string, number>();
   const result: EditableElement[] = [];
   for (const v of visuals) {
-    const token = byText.get(v.text);
+    const token = byNorm.get(normLabel(v.text));
     if (!token) continue;
     const n = counts.get(token.id) ?? 0;
     counts.set(token.id, n + 1);
@@ -261,22 +310,25 @@ export function correlateActors(
   return result;
 }
 
-/** メッセージ本文を表示テキスト一致 + 出現順で対応付ける */
+/**
+ * メッセージを矢印線と文書順で対応付ける (visual も token も 1 メッセージ = 1 件・同順)。
+ * 本文は `<br/>`・折り返しで複数 text に割れるため、テキスト一致でなく文書順の添字で
+ * 突き合わせる (extractMessageVisuals が矢印線 1 本ごとに本文断片をまとめている)。
+ */
 export function correlateMessages(
   visuals: readonly TextVisual[],
   tokens: readonly MessageToken[],
 ): EditableElement[] {
-  const remaining = [...visuals];
   const result: EditableElement[] = [];
-  for (let k = 0; k < tokens.length; k++) {
+  const n = Math.min(visuals.length, tokens.length);
+  for (let k = 0; k < n; k++) {
     const token = tokens[k];
-    const idx = remaining.findIndex((v) => v.text === token.text.trim());
-    if (idx === -1) continue;
-    const [v] = remaining.splice(idx, 1);
+    const v = visuals[k];
     result.push({
       id: `message-${k}`,
       kind: "message",
       el: v.el,
+      extraHits: v.extraEls && v.extraEls.length > 0 ? v.extraEls : undefined, // 2 行目以降のラベル
       fields: [{ name: "label", value: token.text, ranges: [token.textRange] }],
       removeLines: token.removeLines,
       operatorRange: token.arrowRange,
@@ -290,32 +342,27 @@ export function correlateMessages(
 
 // ---- ノート ----
 
-/** SVG のノート本文テキストを文書順で抽出する (幾何は箱) */
+/** SVG のノート本文テキストを文書順で抽出する (幾何は箱。`<br/>` 分割は箱単位で結合) */
 export function extractNoteVisuals(svg: SVGSVGElement): TextVisual[] {
-  const visuals: TextVisual[] = [];
-  for (const textEl of svg.querySelectorAll<SVGGraphicsElement>("text.noteText")) {
-    const text = (textEl.textContent ?? "").trim();
-    if (text) visuals.push({ text, el: boxOf(textEl) });
-  }
-  return visuals;
+  return groupByBox(svg.querySelectorAll<SVGGraphicsElement>("text.noteText"));
 }
 
-/** ノート本文を表示テキスト一致 + 出現順で対応付ける */
+/**
+ * ノート本文を文書順で対応付ける (1 ノート = 1 箱・同順)。
+ * 本文は `<br/>` で複数 text に割れるため、テキスト一致でなく文書順の添字で突き合わせる。
+ */
 export function correlateNotes(
   visuals: readonly TextVisual[],
   tokens: readonly NoteToken[],
 ): EditableElement[] {
-  const remaining = [...visuals];
   const result: EditableElement[] = [];
-  for (let k = 0; k < tokens.length; k++) {
+  const n = Math.min(visuals.length, tokens.length);
+  for (let k = 0; k < n; k++) {
     const token = tokens[k];
-    const idx = remaining.findIndex((v) => v.text === token.text.trim());
-    if (idx === -1) continue;
-    const [v] = remaining.splice(idx, 1);
     result.push({
       id: `note-${k}`,
       kind: "note",
-      el: v.el,
+      el: visuals[k].el,
       fields: [{ name: "label", value: token.text, ranges: [token.textRange] }],
       removeLines: token.removeLines,
       placementRange: token.placementRange,
