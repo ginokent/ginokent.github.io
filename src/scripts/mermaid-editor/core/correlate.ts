@@ -9,10 +9,46 @@ import type {
   NodeToken,
   NodeVisual,
   NoteToken,
+  SourceRange,
   TextVisual,
 } from "./types";
 
 // 統合層: 視覚モデル (SVG) とソースモデル (トークン) を突き合わせる
+
+// 図の内容を表す text のクラス (タイトル候補から除外する)
+const CONTENT_TEXT_CLASS =
+  /\b(actor|messageText|noteText|loopText|sectionTitle|labelText|sequenceNumber|nodeLabel|edgeLabel)\b/u;
+
+/**
+ * 図タイトル (frontmatter title) を編集要素にする (図種非依存)。
+ * 描画の `<text>` のうち、内容クラスでなく値が title と一致するものを探して相関する
+ * (flowchart は `text.flowchartTitleText`、sequence は無 class の `<text>`)。
+ * DOM 位置やクラスの有無に依存せず、ソースの title 値との一致で確実に拾う。
+ */
+export function correlateTitle(
+  svg: SVGSVGElement,
+  token: { value: string; range: SourceRange } | null,
+): EditableElement[] {
+  if (!token) return [];
+  const want = normLabel(token.value);
+  let el: SVGGraphicsElement | null = null;
+  for (const t of svg.querySelectorAll<SVGGraphicsElement>("text")) {
+    if (CONTENT_TEXT_CLASS.test(t.getAttribute("class") ?? "")) continue;
+    if (normLabel(t.textContent ?? "") === want) {
+      el = t;
+      break;
+    }
+  }
+  if (!el) return [];
+  return [
+    {
+      id: "title",
+      kind: "title",
+      el,
+      fields: [{ name: "title", value: token.value, ranges: [token.range] }],
+    },
+  ];
+}
 
 /**
  * SVG からノードの g 要素を抽出し、論理 ID を逆引きする。

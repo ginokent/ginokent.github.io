@@ -19,6 +19,7 @@ const LIFELINE_BAND_PX = 14; // ライフライン (縦線) のクリック帯�
 const FIELD_LABELS: Record<string, string> = {
   label: "ラベル",
   id: "ID",
+  title: "タイトル",
 };
 
 /** フィールド編集メニューのラベル。半角で終わる名前 (ID 等) は全角の前に半角スペースを入れる */
@@ -546,7 +547,9 @@ export function drawOverlay(
     hitEl.addEventListener("dblclick", () => {
       window.clearTimeout(clickTimer);
       if (pending) return;
-      if (hasLabel(el)) edit(el, "label", anchor);
+      // 表示テキストのフィールド (label / title) を直接編集する
+      const f = el.fields.find((x) => x.name === "label" || x.name === "title");
+      if (f) edit(el, f.name, anchor);
     });
   };
 
