@@ -12,41 +12,77 @@ export const TEMPLATES: Template[] = [
   {
     key: "sequence",
     label: "シーケンス図",
-    text: `sequenceDiagram
+    text: `---
+title: Authorization Code Flow with PKCE
+---
+sequenceDiagram
     autonumber
 
-    participant U as User / Resource Owner<br/>ユーザー
-    participant C as Client App<br/>アプリ
-    participant AS as Authorization Server<br/>認可サーバー
-    participant RS as Resource Server<br/>API サーバー
+    participant U as User<br/>Resource Owner
+    participant B as Browser / User-Agent
+    participant C as Client<br/>SPA / Mobile App / Web App
+    participant AS as Authorization Server
+    participant RS as Resource Server<br/>API
 
-    U->>C: 連携開始
+    U->>C: ログイン / 連携開始
+
     C->>C: code_verifier を生成
-    C->>C: code_challenge を生成
+    C->>C: code_challenge = BASE64URL(SHA256(code_verifier)) を生成
 
-    C->>AS: 認可リクエスト<br/>client_id, redirect_uri, scope, state, code_challenge
-    AS->>U: ログイン画面・同意画面を表示
-    U->>AS: ログイン・同意
+    C->>B: 認可エンドポイントへリダイレクト
+    B->>AS: GET /authorize<br/>response_type=code<br/>client_id<br/>redirect_uri<br/>scope<br/>state<br/>code_challenge<br/>code_challenge_method=S256
 
-    AS-->>C: redirect_uri にリダイレクト<br/>authorization code, state
+    AS->>U: ログイン画面を表示
+    U->>AS: 認証情報を入力
+
+    AS->>U: 同意画面を表示
+    U->>AS: scope へのアクセスを許可
+
+    AS->>B: redirect_uri にリダイレクト<br/>?code=authorization_code&state=...
+    B->>C: authorization_code と state を渡す
 
     C->>C: state を検証
 
-    C->>AS: token request<br/>code, redirect_uri, client_id, code_verifier
-    AS->>AS: code_verifier を検証
-    AS-->>C: access_token / refresh_token
+    C->>AS: POST /token<br/>grant_type=authorization_code<br/>code<br/>redirect_uri<br/>client_id<br/>code_verifier
+
+    AS->>AS: code_verifier から code_challenge を再計算
+    AS->>AS: /authorize 時の code_challenge と照合
+
+    AS-->>C: access_token<br/>refresh_token 任意<br/>id_token 任意
 
     C->>RS: API request<br/>Authorization: Bearer access_token
+
     RS->>RS: access_token を検証
-    RS-->>C: protected resource`,
+    RS-->>C: Protected Resource`,
   },
   {
     key: "flowchart",
     label: "フローチャート",
-    text: `flowchart TD
-  A[開始] --> B{条件判定}
-  B -->|はい| C([完了])
-  B -->|いいえ| D[やり直す]
-  D --> A`,
+    text: `---
+title: Least Recently Used
+---
+flowchart TD
+    Start([開始]) --> Req[キーへのアクセス要求<br/>get または put]
+    Req --> Exists{キーはキャッシュに存在する？}
+
+    Exists -->|Yes| Hit[Cache Hit]
+    Hit --> UpdateValue{put 操作？}
+    UpdateValue -->|Yes| SetValue[値を更新]
+    UpdateValue -->|No| MoveRecent[対象キーを<br/>Most Recently Used に移動]
+    SetValue --> MoveRecent
+    MoveRecent --> Return[結果を返す]
+    Return --> End([終了])
+
+    Exists -->|No| Miss[Cache Miss]
+    Miss --> IsGet{get 操作？}
+    IsGet -->|Yes| NotFound[Not Found を返す]
+    NotFound --> End
+
+    IsGet -->|No: put| HasSpace{キャッシュ容量に空きがある？}
+    HasSpace -->|Yes| Insert[新しいキーと値を追加]
+    HasSpace -->|No| Evict[Least Recently Used を削除]
+    Evict --> Insert
+    Insert --> MarkRecent[追加したキーを<br/>Most Recently Used にする]
+    MarkRecent --> Return`,
   },
 ];

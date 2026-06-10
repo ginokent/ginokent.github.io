@@ -69,17 +69,56 @@ export function cycleDirectionEdit(text: string): TextEdit | null {
   return { range: { start: start + ke, end: start + ke }, newText: ` ${next}` };
 }
 
-/** コメント・空行を除く最初の行とその開始オフセットを返す */
-function headerLine(text: string): { line: string; start: number } {
-  let start = 0;
-  for (const raw of text.split("\n")) {
-    if (raw.trim() && !raw.trim().startsWith("%%")) {
-      const end = text.indexOf("\n", start);
-      return { line: end === -1 ? text.slice(start) : text.slice(start, end), start };
-    }
-    start += raw.length + 1;
+/** 先頭の YAML フロントマター (--- ... ---) の本体開始行 index を返す (無ければ 0) */
+function bodyStartLine(lines: readonly string[]): number {
+  const first = lines.findIndex((l) => l.trim() !== "");
+  if (first === -1 || lines[first].trim() !== "---") return 0;
+  for (let k = first + 1; k < lines.length; k++) {
+    if (lines[k].trim() === "---") return k + 1; // 閉じ --- の次が本体
   }
-  return { line: "", start: 0 };
+  return lines.length; // 閉じが無ければ全行フロントマター扱い
+}
+
+/**
+ * 図ヘッダ (フロントマター・コメント・空行を除く最初の有意行) の行 index を返す。
+ * allLineRanges と同じ split 基準なので、その index で行範囲を引ける。無ければ -1。
+ */
+export function headerLineIndex(text: string): number {
+  const lines = text.split("\n");
+  for (let i = bodyStartLine(lines); i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (t !== "" && !t.startsWith("%%")) return i;
+  }
+  return -1;
+}
+
+/** 図ヘッダ行 (フロントマターを除く最初の有意行) とその開始オフセットを返す */
+function headerLine(text: string): { line: string; start: number } {
+  const idx = headerLineIndex(text);
+  if (idx === -1) return { line: "", start: 0 };
+  const r = allLineRanges(text)[idx];
+  return { line: text.slice(r.start, r.end), start: r.start };
+}
+
+/**
+ * 先頭の YAML フロントマター内の `title: <値>` を返す (無ければ null)。
+ * 値のソース範囲を編集対象にする (図種非依存)。
+ */
+export function parseTitle(text: string): { value: string; range: SourceRange } | null {
+  const lines = allLineRanges(text);
+  const first = lines.findIndex((r) => text.slice(r.start, r.end).trim() !== "");
+  if (first === -1 || text.slice(lines[first].start, lines[first].end).trim() !== "---") return null;
+  for (let k = first + 1; k < lines.length; k++) {
+    const r = lines[k];
+    const line = text.slice(r.start, r.end);
+    if (line.trim() === "---") break; // フロントマター終端
+    const m = /^(\s*title:[ \t]*)(.+?)[ \t]*$/u.exec(line);
+    if (m) {
+      const start = r.start + m[1].length;
+      return { value: m[2], range: { start, end: start + m[2].length } };
+    }
+  }
+  return null;
 }
 
 /**
@@ -138,10 +177,7 @@ export function toggleAutonumberEdits(text: string): TextEdit[] {
   const lines = allLineRanges(text);
   const existing = lines.filter((r) => AUTONUMBER_RE.test(text.slice(r.start, r.end)));
   if (existing.length > 0) return deleteLines(text, existing); // 解除
-  const headerIdx = lines.findIndex((r) => {
-    const t = text.slice(r.start, r.end).trim();
-    return t !== "" && !t.startsWith("%%");
-  });
+  const headerIdx = headerLineIndex(text);
   if (headerIdx === -1) return [];
   let indent = INDENT;
   for (let k = headerIdx + 1; k < lines.length; k++) {
@@ -162,16 +198,15 @@ const PARTICIPANT_RE = /^\s*(?:participant|actor)\b/;
  * 宣言を上にまとめることで、メッセージの間に紛れ込まない。
  */
 export function participantInsertEdit(text: string, statement: string): TextEdit {
+  const lines = allLineRanges(text);
+  const headerIdx = headerLineIndex(text);
   let anchor: SourceRange | null = null;
-  let header: SourceRange | null = null;
-  for (const r of allLineRanges(text)) {
-    const line = text.slice(r.start, r.end);
-    const t = line.trim();
-    if (!header && t !== "" && !t.startsWith("%%")) header = r;
-    if (PARTICIPANT_RE.test(line)) anchor = r;
+  for (const r of lines) {
+    if (PARTICIPANT_RE.test(text.slice(r.start, r.end))) anchor = r;
   }
   if (anchor) return insertStatement(text, anchor, "after", statement);
-  // 宣言が無い場合はヘッダ直後へ。ヘッダ自身は無インデントなので本文インデントを使う
+  // 宣言が無い場合はヘッダ (フロントマターを除く) 直後へ。本文インデントを使う
+  const header = headerIdx === -1 ? null : lines[headerIdx];
   if (header) return { range: { start: header.end, end: header.end }, newText: `\n${INDENT}${statement}` };
   return appendStatement(text, statement);
 }
@@ -187,11 +222,8 @@ export function moveLineEdit(text: string, lineRange: SourceRange, dir: "up" | "
   if (idx === -1) return null;
   const j = dir === "up" ? idx - 1 : idx + 1;
   if (j < 0 || j >= lines.length) return null;
-  const headerIdx = lines.findIndex((r) => {
-    const t = text.slice(r.start, r.end).trim();
-    return t !== "" && !t.startsWith("%%");
-  });
-  if (idx <= headerIdx) return null; // ヘッダ自身は動かさない
+  const headerIdx = headerLineIndex(text);
+  if (idx <= headerIdx) return null; // ヘッダ自身 (やフロントマター) は動かさない
   if (dir === "up" && j <= headerIdx) return null; // ヘッダの上には出さない
   const a = lines[idx];
   const b = lines[j];
