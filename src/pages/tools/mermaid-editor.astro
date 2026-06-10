@@ -150,11 +150,14 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   */
   /*
     このツールはテキストと図を縦積みする作業領域なので、ブログ記事向けの既定幅
-    (.container の max-width: 720px) では窮屈になる。.mermaid-editor を含むページの
-    main.container だけを広げ、他ページ (記事・OCR 等) には影響させない。
+    (.container の max-width: 720px) では窮屈になる。とくに参加者の多いシーケンス図は
+    図ペインがページ幅いっぱいに広がれるほど収まりやすい。スタンドアロン版 (body 全幅)
+    に合わせ、.mermaid-editor を含むページの main.container だけ幅上限を撤廃して全幅に
+    する (.container の左右パディングがそのまま余白になる)。他ページ (記事・OCR 等) には
+    影響させない。
   */
   main.container:has(.mermaid-editor) {
-    max-width: 1100px;
+    max-width: none;
   }
 
   /*
