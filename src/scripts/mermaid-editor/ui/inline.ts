@@ -63,6 +63,8 @@ export function openInlineEditor(
 
   input.addEventListener("keydown", (ev: Event) => {
     const e = ev as KeyboardEvent;
+    // IME 変換中 (日本語などの確定 Enter) は無視する。確定/取消で誤って閉じないため
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === "Enter") {
       if (multiline && e.shiftKey) return; // Shift+Enter は改行を挿入 (textarea の既定動作)
       e.preventDefault();

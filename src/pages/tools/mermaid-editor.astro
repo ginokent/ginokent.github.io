@@ -336,6 +336,20 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     background: rgba(22, 163, 74, 0.12);
   }
 
+  /* メッセージ追加の起点マーカー (ここから矢印が伸びる)。指定座標を中心に置く */
+  .mermaid-editor .pick-start {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    margin: -6px 0 0 -6px;
+    border-radius: 50%;
+    background: #16a34a;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1.5px #16a34a;
+    pointer-events: none;
+    z-index: 26;
+  }
+
   .mermaid-editor .pick-hint {
     position: absolute;
     top: 6px;
