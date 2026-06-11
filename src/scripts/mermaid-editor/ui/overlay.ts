@@ -6,12 +6,16 @@ import { openMenu, type MenuAction } from "./menu";
 //   - ノード等  : HTML の透明 div ヒット
 //   - エッジ    : SVG 上に重ねる透明で太いパス (線全体をクリックしやすく)
 // 操作:
-//   - シングルクリック → メニュー
+//   - 左クリック       → ライフライン (縦線) だけはその高さを起点に「矢印を伸ばす」モードへ直接入る。
+//                        それ以外の要素 (ノード/アクター/メッセージ/ノート/エッジ/ブロック/タイトル等)
+//                        はメニューを開く
+//   - 右クリック/長押し → メニュー (主に PC は右クリック、スマホは長押し)
 //   - ダブルクリック   → ラベルを直接インライン編集
-//   - ノード選択モード → 対象ノードのクリックで確定 (エッジ追加 / 再接続)
+//   - 選択モード       → 対象のクリックで確定 (矢印追加 / 再接続 / ブロックで囲む 等)
 
 const SVGNS = "http://www.w3.org/2000/svg";
 const DBLCLICK_DELAY = 220; // ms
+const LONGPRESS_MS = 500; // 長押しでメニューを開くまでの時間 (スマホ用)
 const EDGE_HIT_WIDTH = 16; // エッジのクリック可能領域の太さ (SVG ユーザー単位)
 const MSG_BAND_PX = 18; // メッセージ矢印のクリック帯の太さ (画面ピクセル)
 const LIFELINE_BAND_PX = 14; // ライフライン (縦線) のクリック帯の太さ (画面ピクセル)
@@ -134,6 +138,10 @@ export function drawOverlay(
   let pickSource: Element | null = null;
   let hint: HTMLElement | null = null;
   let startMark: HTMLElement | null = null; // 「メッセージを追加」起点 (ここから矢印が伸びる) の目印
+  // 長押しでメニューを開いた直後に発火する click を 1 回だけ無視するためのフラグ。
+  // 長押し (touch) はタイマー満了後 touchend で click も発火させるため、これを抑止しないと
+  // メニューを開いた上に「矢印モード」へ入ってしまう
+  let suppressClick = false;
   let outsideTimer: number | undefined;
   const onPickKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") cancelPending();
@@ -548,6 +556,48 @@ export function drawOverlay(
     });
   }
 
+  // 右クリック / 長押し でメニュー (open) を開くトリガーを要素に張る。open はイベント発生位置
+  // (clientX, clientY) を受け取る (ライフライン等、高さでメニュー内容が変わる要素のため)。
+  // 長押し満了後の click は suppressClick で 1 回無視し、矢印モードへ入らないようにする。
+  const attachContextTriggers = (target: Element, open: (clientX: number, clientY: number) => void): void => {
+    target.addEventListener("contextmenu", (ev: Event) => {
+      const e = ev as MouseEvent;
+      e.preventDefault();
+      if (pending) {
+        cancelPending(); // ピック中の右クリックは取消 (Esc 相当)
+        return;
+      }
+      open(e.clientX, e.clientY);
+    });
+    let pressTimer: number | undefined;
+    target.addEventListener(
+      "touchstart",
+      (ev: Event) => {
+        const t = (ev as TouchEvent).touches[0];
+        const x = t?.clientX ?? 0;
+        const y = t?.clientY ?? 0;
+        suppressClick = false;
+        pressTimer = window.setTimeout(() => {
+          suppressClick = true; // 後続の click が矢印モードを誤発火しないよう抑止
+          if (pending) {
+            cancelPending();
+            return;
+          }
+          open(x, y);
+        }, LONGPRESS_MS);
+      },
+      { passive: true },
+    );
+    const cancelPress = () => window.clearTimeout(pressTimer);
+    target.addEventListener("touchmove", cancelPress);
+    target.addEventListener("touchend", cancelPress);
+    target.addEventListener("touchcancel", cancelPress);
+  };
+
+  // 左クリックの主作用: ライフライン (専用ハンドラ) だけが「矢印を伸ばす」モードに直接入る。
+  // それ以外の要素 (ノード/アクター/メッセージ/ノート/エッジ/ブロック/タイトル等) は左クリックで
+  // メニューを開く。矢印追加はメニュー (「既存ノードへ矢印」「メッセージを追加」等) から行う。
+
   const wire = (hitEl: Element, el: EditableElement, anchor: () => DOMRect) => {
     let clickTimer: number | undefined;
     hitEl.addEventListener("click", () => {
@@ -560,10 +610,16 @@ export function drawOverlay(
         else cancelPending();
         return;
       }
+      if (suppressClick) {
+        suppressClick = false; // 長押しメニュー直後の click を 1 回無視する
+        return;
+      }
       window.clearTimeout(clickTimer);
-      clickTimer = window.setTimeout(() => {
-        setActive(openMenu(overlayEl, anchor(), hostRect(), actionsFor(el, anchor, hitEl)));
-      }, DBLCLICK_DELAY);
+      // dblclick (ラベル直編集) と両立させるため、確定は DBLCLICK_DELAY 後に行う
+      clickTimer = window.setTimeout(
+        () => setActive(openMenu(overlayEl, anchor(), hostRect(), actionsFor(el, anchor, hitEl))),
+        DBLCLICK_DELAY,
+      );
     });
     hitEl.addEventListener("dblclick", () => {
       window.clearTimeout(clickTimer);
@@ -572,6 +628,8 @@ export function drawOverlay(
       const f = el.fields.find((x) => x.name === "label" || x.name === "title");
       if (f) edit(el, f.name, anchor);
     });
+    // 右クリック / 長押し でメニュー
+    attachContextTriggers(hitEl, () => setActive(openMenu(overlayEl, anchor(), hostRect(), actionsFor(el, anchor, hitEl))));
   };
 
   for (const el of elements) {
@@ -586,7 +644,36 @@ export function drawOverlay(
       band.style.top = `${r.top - overlayRect.top}px`;
       band.style.width = `${LIFELINE_BAND_PX}px`;
       band.style.height = `${r.height}px`;
-      band.title = `${from}: クリックでこの位置にメッセージ/ノートを追加`;
+      band.title = `${from}: 左クリックでこの位置からメッセージ / 右クリック・長押しでメニュー`;
+      // クリック高さ y からこの縦線を起点にメッセージ送信先をピックさせる (ここから矢印が伸びる)
+      const startLifelineMessage = (clientY: number) => {
+        const anchorId = insertionAnchor(elements, clientY);
+        const lineRect = el.el.getBoundingClientRect();
+        const startAt = { x: lineRect.left + lineRect.width / 2, y: clientY };
+        startPickActor(
+          `${from} からの送信先 (アクターの箱か縦線) をクリック (Esc で取消)`,
+          isActorTarget,
+          (to) => cb.onInsertMessage(from, to, anchorId),
+          band,
+          startAt,
+        );
+      };
+      // 右クリック / 長押し用メニュー: メッセージ追加・ノート追加・ブロックで囲む。
+      // いずれもイベント発生位置の高さ (anchorId) をその位置として使う
+      const openLifelineMenuAt = (clientX: number, clientY: number) => {
+        const anchorId = insertionAnchor(elements, clientY);
+        const at = pointRect(clientX, clientY);
+        const menu: MenuAction[] = [
+          { label: "メッセージを追加", onSelect: () => startLifelineMessage(clientY) },
+          {
+            label: "ノートを追加 ▸",
+            onSelect: () => setActive(openMenu(overlayEl, at, hostRect(), lifelineNoteActions(from, anchorId, band))),
+          },
+        ];
+        // ブロックで囲む: このクリック高さを始点に、終点の高さをもう一度クリックして範囲を囲む
+        addWrapRange(menu, clientY, at, band);
+        setActive(openMenu(overlayEl, at, hostRect(), menu));
+      };
       band.addEventListener("click", (e) => {
         // 送信先ピック中はこの縦線を送信先として確定する (アクターの箱と同等)
         if (pending?.kind === "pickActor") {
@@ -611,29 +698,16 @@ export function drawOverlay(
           cancelPending();
           return;
         }
-        // 縦線を直クリックしたときはメニューを出し、メッセージ追加かノート追加を選ばせる。
-        // どちらもクリックした高さ (anchorId) をその位置として使う
-        const me = e as MouseEvent;
-        const anchorId = insertionAnchor(elements, me.clientY);
-        const at = pointRect(me.clientX, me.clientY);
-        // 起点はこの縦線上のクリック高さ (ここから矢印が伸びる)
-        const lineRect = el.el.getBoundingClientRect();
-        const startAt = { x: lineRect.left + lineRect.width / 2, y: me.clientY };
-        const menu: MenuAction[] = [
-          {
-            label: "メッセージを追加",
-            onSelect: () =>
-              startPickActor(`${from} からの送信先 (アクターの箱か縦線) をクリック (Esc で取消)`, isActorTarget, (to) => cb.onInsertMessage(from, to, anchorId), band, startAt),
-          },
-          {
-            label: "ノートを追加 ▸",
-            onSelect: () => setActive(openMenu(overlayEl, at, hostRect(), lifelineNoteActions(from, anchorId, band))),
-          },
-        ];
-        // ブロックで囲む: このクリック高さを始点に、終点の高さをもう一度クリックして範囲を囲む
-        addWrapRange(menu, me.clientY, at, band);
-        setActive(openMenu(overlayEl, at, hostRect(), menu));
+        if (suppressClick) {
+          suppressClick = false; // 長押しメニュー直後の click を 1 回無視する
+          return;
+        }
+        // 縦線の左クリックはこの高さを起点にメッセージ送信先をピックする (矢印を伸ばすモード)。
+        // ライフラインにはラベル直編集 (dblclick) が無いので遅延せず即座に開始する
+        startLifelineMessage((e as MouseEvent).clientY);
       });
+      // 右クリック / 長押し でメニュー (メッセージ/ノート/ブロックで囲む)
+      attachContextTriggers(band, openLifelineMenuAt);
       overlayEl.append(band);
       continue;
     }
