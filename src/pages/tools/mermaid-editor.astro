@@ -17,7 +17,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   <article class="mermaid-editor">
     <header class="me-header">
       <h1>Mermaid Editor</h1>
-      <p>要素をクリックでメニュー、ダブルクリックでラベルを直接編集 (戦略 B: 範囲保持書き戻し)</p>
+      <p>縦線を左クリックで矢印を伸ばす、要素を右クリック / 長押しでメニュー、ダブルクリックでラベルを直接編集 (戦略 B: 範囲保持書き戻し)</p>
     </header>
     <div class="me-panes">
       <!-- 左: Mermaid テキスト (正本) -->
@@ -28,7 +28,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       <!-- 右: レンダリング図 + オーバーレイ編集層 -->
       <section class="pane">
         <div class="pane-head">
-          <h2>図 (クリック: メニュー / ダブルクリック: ラベル)</h2>
+          <h2>図 (縦線左クリック: 矢印 / 右クリック・長押し: メニュー / ダブルクリック: ラベル)</h2>
           <div class="toolbar">
             <button id="add-element" type="button" title="要素を追加 (flowchart: ノード / sequence: 参加者)">＋ 追加</button>
             <button id="direction" type="button" data-diagram="flowchart" title="方向を切替 (flowchart: TD→LR→RL→BT)">⟲ 向き</button>
