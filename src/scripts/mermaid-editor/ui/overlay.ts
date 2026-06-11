@@ -133,6 +133,7 @@ export function drawOverlay(
   let pending: Pending | null = null;
   let pickSource: Element | null = null;
   let hint: HTMLElement | null = null;
+  let startMark: HTMLElement | null = null; // 「メッセージを追加」起点 (ここから矢印が伸びる) の目印
   let outsideTimer: number | undefined;
   const onPickKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") cancelPending();
@@ -148,11 +149,14 @@ export function drawOverlay(
     overlayEl.classList.remove("picking");
     hint?.remove();
     hint = null;
+    startMark?.remove();
+    startMark = null;
     window.clearTimeout(outsideTimer);
     document.removeEventListener("keydown", onPickKey);
     document.removeEventListener("click", onOutsideClick);
   }
-  function beginPending(p: Pending, hintText: string, source?: Element): void {
+  // mark は起点の画面座標 (viewport)。あれば「ここから矢印が伸びる」目印を overlay に置く
+  function beginPending(p: Pending, hintText: string, source?: Element, mark?: { x: number; y: number }): void {
     active?.();
     active = null;
     pending = p;
@@ -163,6 +167,13 @@ export function drawOverlay(
     hint.className = "pick-hint";
     hint.textContent = hintText;
     overlayEl.append(hint);
+    if (mark) {
+      startMark = document.createElement("div");
+      startMark.className = "pick-start";
+      startMark.style.left = `${mark.x - overlayRect.left}px`;
+      startMark.style.top = `${mark.y - overlayRect.top}px`;
+      overlayEl.append(startMark);
+    }
     document.addEventListener("keydown", onPickKey);
     // 開始のクリック自身を拾わないよう、枠外クリック検知は次のティックで登録する
     outsideTimer = window.setTimeout(() => document.addEventListener("click", onOutsideClick), 0);
@@ -172,7 +183,8 @@ export function drawOverlay(
     accept: (el: EditableElement) => boolean,
     onPick: (refId: string) => void,
     source?: Element,
-  ) => beginPending({ kind: "pickActor", accept, onPick }, hintText, source);
+    mark?: { x: number; y: number },
+  ) => beginPending({ kind: "pickActor", accept, onPick }, hintText, source, mark);
   const startPlaceNote = (placement: NotePlacement, actorIds: string[], hintText: string, source?: Element) =>
     beginPending({ kind: "placeNote", placement, actorIds }, hintText, source);
   // refId を持たない要素 (メッセージ等) を選ばせる。ブロックで囲む終端メッセージの指定に使う
@@ -273,8 +285,17 @@ export function drawOverlay(
     if (el.kind === "actor" && el.refId) {
       a.push({
         label: "メッセージを追加",
-        onSelect: () =>
-          startPickActor(`${el.refId} から相手のアクター (箱か縦線) をクリック (Esc で取消)`, isActorTarget, (to) => cb.onAddMessage(el.refId!, to), hitEl),
+        onSelect: () => {
+          // 起点はこのアクターの箱の下端中央 (ここから矢印が伸びる)
+          const r = anchor();
+          startPickActor(
+            `${el.refId} から相手のアクター (箱か縦線) をクリック (Esc で取消)`,
+            isActorTarget,
+            (to) => cb.onAddMessage(el.refId!, to),
+            hitEl,
+            { x: r.left + r.width / 2, y: r.bottom },
+          );
+        },
       });
       a.push({
         label: "ノートを追加 ▸",
@@ -595,11 +616,14 @@ export function drawOverlay(
         const me = e as MouseEvent;
         const anchorId = insertionAnchor(elements, me.clientY);
         const at = pointRect(me.clientX, me.clientY);
+        // 起点はこの縦線上のクリック高さ (ここから矢印が伸びる)
+        const lineRect = el.el.getBoundingClientRect();
+        const startAt = { x: lineRect.left + lineRect.width / 2, y: me.clientY };
         const menu: MenuAction[] = [
           {
             label: "メッセージを追加",
             onSelect: () =>
-              startPickActor(`${from} からの送信先 (アクターの箱か縦線) をクリック (Esc で取消)`, isActorTarget, (to) => cb.onInsertMessage(from, to, anchorId), band),
+              startPickActor(`${from} からの送信先 (アクターの箱か縦線) をクリック (Esc で取消)`, isActorTarget, (to) => cb.onInsertMessage(from, to, anchorId), band, startAt),
           },
           {
             label: "ノートを追加 ▸",
