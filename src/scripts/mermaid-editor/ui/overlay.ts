@@ -178,8 +178,12 @@ export function drawOverlay(
     if (mark) {
       startMark = document.createElement("div");
       startMark.className = "pick-start";
-      startMark.style.left = `${mark.x - overlayRect.left}px`;
-      startMark.style.top = `${mark.y - overlayRect.top}px`;
+      // overlay 矩形はライブ計測する (hostRect)。描画時に取得した overlayRect を使うと、
+      // mark は click 時のライブ client 座標なので、描画後のスクロール分だけ ○ がクリック位置
+      // からずれる (メニュー/入力欄と同じ理由で配置基準の座標系を揃える)
+      const host = hostRect();
+      startMark.style.left = `${mark.x - host.left}px`;
+      startMark.style.top = `${mark.y - host.top}px`;
       overlayEl.append(startMark);
     }
     document.addEventListener("keydown", onPickKey);
