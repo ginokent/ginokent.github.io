@@ -1,0 +1,28 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import MermaidEditor from '../../../components/MermaidEditor.astro';
+import { locales, type Locale, localePath } from '../../../lib/i18n';
+
+// 言語プレフィックス付きルート。prefixDefaultLocale:false のため en は /en/tools/mermaid-editor、
+// ja は /ja/tools/mermaid-editor (既定の /tools/mermaid-editor の別名) を生成する。
+// 他ページ ([lang]/about.astro 等) と同じ流儀に揃えている。
+export function getStaticPaths() {
+  return locales.map((lang) => ({ params: { lang } }));
+}
+
+const { lang } = Astro.params as { lang: Locale };
+
+const descriptions: Record<Locale, string> = {
+  ja: 'Mermaid 図をブラウザ上でグラフィカルに編集し、元の整形を保持したまま Mermaid 記法へ書き戻すツール。処理はすべてブラウザ内で完結します。',
+  en: 'Edit Mermaid diagrams graphically in your browser and write changes back to Mermaid syntax while preserving the original formatting. Everything runs entirely in your browser.',
+};
+---
+
+<BaseLayout
+  title="Mermaid Editor"
+  description={descriptions[lang]}
+  lang={lang}
+  canonicalPath={localePath('/tools/mermaid-editor', lang)}
+>
+  <MermaidEditor locale={lang} />
+</BaseLayout>
