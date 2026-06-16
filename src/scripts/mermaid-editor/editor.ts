@@ -8,6 +8,7 @@ import { parseError, renderInto, validate } from "./core/render";
 import { tokenizeSequence } from "./core/source/sequence";
 import { flowchartDeclInsertEdit } from "./core/source/flowchart";
 import { createSubgraphBlockEdit, subgraphAddNodeEdit, tokenizeSubgraphs } from "./core/source/subgraph";
+import { formatSource } from "./core/format";
 import {
   INDENT,
   appendStatement,
@@ -253,6 +254,15 @@ export class Editor {
   async addElement(): Promise<void> {
     if (this.isFlowchart()) await this.addNode();
     else if (this.isSequence()) await this.addParticipant();
+  }
+
+  /**
+   * 整形 (fmt): 現在のテキストを「宣言を上にまとめる」正準レイアウトへ書き換える。
+   * 対応図種 (flowchart / sequence) 以外は何もしない。履歴に積むので Undo で戻せる。
+   */
+  async format(): Promise<void> {
+    const out = formatSource(this.dom.source.value);
+    if (out !== null) await this.replaceAll(out);
   }
 
   /** 新規ノードを追加する (宣言は宣言ブロックの末尾へまとめる) */
