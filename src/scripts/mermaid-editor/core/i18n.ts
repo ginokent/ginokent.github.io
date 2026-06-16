@@ -121,6 +121,8 @@ export interface Messages {
     diagramTitle: string;
     add: string;
     addTitle: string;
+    fmt: string;
+    fmtTitle: string;
     direction: string;
     directionTitle: string;
     autonumber: (on: boolean) => string;
@@ -262,6 +264,8 @@ const ja: Messages = {
     diagramTitle: "図 (縦線左クリック: 矢印 / 右クリック・長押し: メニュー / ダブルクリック: ラベル)",
     add: "＋ 追加",
     addTitle: "要素を追加 (flowchart: ノード / sequence: 参加者)",
+    fmt: "⇕ 整形",
+    fmtTitle: "整形: 宣言を上にまとめる (flowchart: ノード / sequence: participant を集約)",
     direction: "⟲ 向き",
     directionTitle: "方向を切替 (flowchart: TD→LR→RL→BT)",
     autonumber: (on) => `① 連番 ${on ? "オン" : "オフ"}`,
@@ -397,6 +401,8 @@ const en: Messages = {
     diagramTitle: "Diagram (lifeline left-click: arrow / right-click or long-press: menu / double-click: label)",
     add: "＋ Add",
     addTitle: "Add an element (flowchart: node / sequence: participant)",
+    fmt: "⇕ Format",
+    fmtTitle: "Format: hoist declarations to the top (flowchart: nodes / sequence: participants)",
     direction: "⟲ Direction",
     directionTitle: "Cycle direction (flowchart: TD→LR→RL→BT)",
     autonumber: (on) => `① Autonumber ${on ? "on" : "off"}`,

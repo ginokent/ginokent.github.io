@@ -40,6 +40,7 @@ const m = getMessages(locale).chrome;
         <h2>{m.diagramTitle}</h2>
         <div class="toolbar">
           <button id="add-element" type="button" title={m.addTitle}>{m.add}</button>
+          <button id="fmt" type="button" title={m.fmtTitle}>{m.fmt}</button>
           <button id="direction" type="button" data-diagram="flowchart" title={m.directionTitle}>{m.direction}</button>
           <button id="autonumber" type="button" data-diagram="sequence" title={m.autonumberTitle}>{m.autonumber(false)}</button>
           <button id="undo" type="button" title={m.undoTitle}>{m.undo}</button>
@@ -109,6 +110,7 @@ const m = getMessages(locale).chrome;
   );
 
   $('add-element').addEventListener('click', () => void editor.addElement());
+  $('fmt').addEventListener('click', () => void editor.format());
   $('direction').addEventListener('click', () => void editor.cycleDirection());
   $('autonumber').addEventListener('click', () => void editor.toggleAutonumber());
   $('undo').addEventListener('click', () => void editor.undo());
