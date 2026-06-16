@@ -1,3 +1,4 @@
+import { defaultLocale, getMessages, type Messages } from "../core/i18n";
 import { hasActivationMarker, type BlockType, type EditableElement, type NotePlacement } from "../core/types";
 import { openInlineEditor } from "./inline";
 import { openMenu, type MenuAction } from "./menu";
@@ -20,48 +21,39 @@ const EDGE_HIT_WIDTH = 16; // エッジのクリック可能領域の太さ (SVG
 const MSG_BAND_PX = 18; // メッセージ矢印のクリック帯の太さ (画面ピクセル)
 const LIFELINE_BAND_PX = 14; // ライフライン (縦線) のクリック帯の太さ (画面ピクセル)
 
-const FIELD_LABELS: Record<string, string> = {
-  label: "ラベル",
-  id: "ID",
-  title: "タイトル",
-};
+// 表示名は実行時に Messages から引く。ここでは構造データ (括弧・演算子) と
+// 翻訳キーだけを持つ (図種固有の構造は図種に依らず不変なので静的に保つ)。
 
-/** フィールド編集メニューのラベル。半角で終わる名前 (ID 等) は全角の前に半角スペースを入れる */
-function editLabel(name: string): string {
-  const base = FIELD_LABELS[name] ?? name;
-  return `${/[A-Za-z0-9]$/.test(base) ? `${base} ` : base}を編集`;
-}
-
-/** ノード形状の候補 (名前 → 括弧) */
-const SHAPE_CHOICES: ReadonlyArray<{ name: string; open: string; close: string }> = [
-  { name: "矩形", open: "[", close: "]" },
-  { name: "角丸", open: "(", close: ")" },
-  { name: "スタジアム", open: "([", close: "])" },
-  { name: "円", open: "((", close: "))" },
-  { name: "ひし形", open: "{", close: "}" },
-  { name: "六角形", open: "{{", close: "}}" },
-  { name: "サブルーチン", open: "[[", close: "]]" },
-  { name: "円柱", open: "[(", close: ")]" },
+/** ノード形状の候補 (翻訳キー → 括弧) */
+const SHAPE_CHOICES: ReadonlyArray<{ key: keyof Messages["shape"]; open: string; close: string }> = [
+  { key: "rect", open: "[", close: "]" },
+  { key: "rounded", open: "(", close: ")" },
+  { key: "stadium", open: "([", close: "])" },
+  { key: "circle", open: "((", close: "))" },
+  { key: "rhombus", open: "{", close: "}" },
+  { key: "hexagon", open: "{{", close: "}}" },
+  { key: "subroutine", open: "[[", close: "]]" },
+  { key: "cylinder", open: "[(", close: ")]" },
 ];
 
-/** エッジの線種候補 (名前 → リンク演算子) */
-const EDGE_TYPES: ReadonlyArray<{ name: string; op: string }> = [
-  { name: "実線矢印", op: "-->" },
-  { name: "点線矢印", op: "-.->" },
-  { name: "太線矢印", op: "==>" },
-  { name: "実線 (矢印なし)", op: "---" },
-  { name: "終端 x", op: "--x" },
-  { name: "終端 o", op: "--o" },
+/** エッジの線種候補 (翻訳キー → リンク演算子) */
+const EDGE_TYPES: ReadonlyArray<{ key: keyof Messages["edgeType"]; op: string }> = [
+  { key: "solidArrow", op: "-->" },
+  { key: "dottedArrow", op: "-.->" },
+  { key: "thickArrow", op: "==>" },
+  { key: "solidLine", op: "---" },
+  { key: "endX", op: "--x" },
+  { key: "endO", op: "--o" },
 ];
 
-/** メッセージの矢印種別候補 (名前 → 矢印演算子) */
-const MESSAGE_ARROWS: ReadonlyArray<{ name: string; op: string }> = [
-  { name: "実線矢印", op: "->>" },
-  { name: "点線矢印", op: "-->>" },
-  { name: "実線 (矢印なし)", op: "->" },
-  { name: "点線 (矢印なし)", op: "-->" },
-  { name: "終端 x", op: "-x" },
-  { name: "非同期 )", op: "-)" },
+/** メッセージの矢印種別候補 (翻訳キー → 矢印演算子) */
+const MESSAGE_ARROWS: ReadonlyArray<{ key: keyof Messages["messageArrow"]; op: string }> = [
+  { key: "solidArrow", op: "->>" },
+  { key: "dottedArrow", op: "-->>" },
+  { key: "solidLine", op: "->" },
+  { key: "dottedLine", op: "-->" },
+  { key: "endX", op: "-x" },
+  { key: "async", op: "-)" },
 ];
 
 export interface OverlayCallbacks {
@@ -95,20 +87,19 @@ const MOVABLE_KINDS: ReadonlySet<EditableElement["kind"]> = new Set([
   "note",
 ]);
 
-/** 制御ブロックの種別候補 (種別 → 表示名) */
-const BLOCK_TYPES: ReadonlyArray<{ type: BlockType; name: string }> = [
-  { type: "alt", name: "alt (条件分岐)" },
-  { type: "opt", name: "opt (任意)" },
-  { type: "loop", name: "loop (繰り返し)" },
-  { type: "par", name: "par (並行)" },
-];
+/** 制御ブロックの種別候補。表示名は実行時に Messages から引く */
+const BLOCK_TYPES: ReadonlyArray<BlockType> = ["alt", "opt", "loop", "par"];
 
 export function drawOverlay(
   overlayEl: HTMLElement,
   stageEl: HTMLElement,
   elements: readonly EditableElement[],
   cb: OverlayCallbacks,
+  msg: Messages = getMessages(defaultLocale),
 ): void {
+  // フィールド編集メニューのラベル ("<フィールド名> を編集")。
+  // フィールド表示名は Messages から引き、未知のフィールドは名前をそのまま使う
+  const editLabel = (name: string): string => msg.editField(msg.field[name as keyof Messages["field"]] ?? name);
   overlayEl.replaceChildren();
   // ヒット div は overlay の子なので、overlay 自身の矩形を原点に配置する。
   // stage には border/padding があり、overlay は (inset:0 で) stage のパディングボックスを
@@ -208,7 +199,7 @@ export function drawOverlay(
   ) => beginPending({ kind: "pickEl", accept, onPick }, hintText, source);
   // ブロックで囲む: 始点の高さ y1 を持ち、終点の高さをライフライン/要素クリックで指定させる
   const startWrapEnd = (y1: number, type: BlockType, source?: Element) =>
-    beginPending({ kind: "wrapEnd", y1, type }, "囲む終点の高さをライフライン (またはメッセージ/ノート) でクリック (Esc で取消)", source);
+    beginPending({ kind: "wrapEnd", y1, type }, msg.hint.wrapEndHeight, source);
 
   /** pickActor 中にクリックされた要素を送信先候補として確定/取消する */
   const resolvePick = (el: EditableElement): void => {
@@ -239,33 +230,33 @@ export function drawOverlay(
   const actionsFor = (el: EditableElement, anchor: () => DOMRect, hitEl: Element): MenuAction[] => {
     if (el.kind === "edge") {
       const a: MenuAction[] = [];
-      if (hasLabel(el)) a.push({ label: "ラベルを編集", onSelect: () => edit(el, "label", anchor) });
-      else a.push({ label: "ラベルを追加", onSelect: () => cb.onAddEdgeLabel(el) });
+      if (hasLabel(el)) a.push({ label: editLabel("label"), onSelect: () => edit(el, "label", anchor) });
+      else a.push({ label: msg.menu.addLabel, onSelect: () => cb.onAddEdgeLabel(el) });
       a.push({
-        label: "接続元を変更",
+        label: msg.menu.changeEdgeSource,
         onSelect: () =>
-          startPickActor("新しい接続元のノードをクリック (Esc で取消)", isNode, (id) => cb.onApply(el, { from: id })),
+          startPickActor(msg.hint.pickNewEdgeSource, isNode, (id) => cb.onApply(el, { from: id })),
       });
       a.push({
-        label: "接続先を変更",
+        label: msg.menu.changeEdgeTarget,
         onSelect: () =>
-          startPickActor("新しい接続先のノードをクリック (Esc で取消)", isNode, (id) => cb.onApply(el, { to: id })),
+          startPickActor(msg.hint.pickNewEdgeTarget, isNode, (id) => cb.onApply(el, { to: id })),
       });
       if (el.operatorRange) {
         a.push({
-          label: "線種を変更 ▸",
+          label: msg.menu.changeEdgeType,
           onSelect: () =>
             setActive(
               openMenu(
                 overlayEl,
                 anchor(),
                 hostRect(),
-                EDGE_TYPES.map((t) => ({ label: t.name, onSelect: () => cb.onSetOperator(el, t.op) })),
+                EDGE_TYPES.map((t) => ({ label: msg.edgeType[t.key], onSelect: () => cb.onSetOperator(el, t.op) })),
               ),
             ),
         });
       }
-      if (el.endpoints) a.push({ label: "矢印の向きを入れ替える", onSelect: () => cb.onReverse(el) });
+      if (el.endpoints) a.push({ label: msg.menu.reverseArrow, onSelect: () => cb.onReverse(el) });
       addMove(a, el);
       addRemove(a, el);
       return a;
@@ -279,29 +270,29 @@ export function drawOverlay(
       }));
     if (el.kind === "node") {
       a.push({
-        label: "新規ノードへ矢印",
+        label: msg.menu.arrowToNewNode,
         onSelect: () => cb.onAddConnectedNode(el.refId!),
       });
       a.push({
-        label: "既存ノードへ矢印",
+        label: msg.menu.arrowToExistingNode,
         onSelect: () =>
-          startPickActor(`${el.refId} から接続先のノードをクリック (Esc で取消)`, isNode, (to) => cb.onAddEdge(el.refId!, to), hitEl),
+          startPickActor(msg.hint.pickEdgeTargetFrom(el.refId!), isNode, (to) => cb.onAddEdge(el.refId!, to), hitEl),
       });
       if (el.shapeRanges) {
         a.push({
-          label: "形状を変更 ▸",
+          label: msg.menu.changeShape,
           onSelect: () => setActive(openMenu(overlayEl, anchor(), hostRect(), shapeActions(el))),
         });
       }
     }
     if (el.kind === "actor" && el.refId) {
       a.push({
-        label: "メッセージを追加",
+        label: msg.menu.addMessage,
         onSelect: () => {
           // 起点はこのアクターの箱の下端中央 (ここから矢印が伸びる)
           const r = anchor();
           startPickActor(
-            `${el.refId} から相手のアクター (箱か縦線) をクリック (Esc で取消)`,
+            msg.hint.pickMessageTargetFrom(el.refId!),
             isActorTarget,
             (to) => cb.onAddMessage(el.refId!, to),
             hitEl,
@@ -310,34 +301,34 @@ export function drawOverlay(
         },
       });
       a.push({
-        label: "ノートを追加 ▸",
+        label: msg.menu.addNote,
         onSelect: () => setActive(openMenu(overlayEl, anchor(), hostRect(), noteActions(el.refId!, hitEl))),
       });
     }
     if (el.kind === "message") {
       if (el.operatorRange) {
         a.push({
-          label: "種別を変更 ▸",
+          label: msg.menu.changeType,
           onSelect: () =>
             setActive(
               openMenu(
                 overlayEl,
                 anchor(),
                 hostRect(),
-                MESSAGE_ARROWS.map((t) => ({ label: t.name, onSelect: () => cb.onSetOperator(el, t.op) })),
+                MESSAGE_ARROWS.map((t) => ({ label: msg.messageArrow[t.key], onSelect: () => cb.onSetOperator(el, t.op) })),
               ),
             ),
         });
       }
       if (el.activationRange) {
         a.push({
-          label: "アクティベーション ▸",
+          label: msg.menu.activation,
           onSelect: () =>
             setActive(
               openMenu(overlayEl, anchor(), hostRect(), [
-                { label: "対象を起動 (+)", onSelect: () => cb.onSetActivation(el, "+") },
-                { label: "対象を終了 (−)", onSelect: () => cb.onSetActivation(el, "-") },
-                { label: "起動/終了を解除", onSelect: () => cb.onSetActivation(el, "") },
+                { label: msg.menu.activate, onSelect: () => cb.onSetActivation(el, "+") },
+                { label: msg.menu.deactivate, onSelect: () => cb.onSetActivation(el, "-") },
+                { label: msg.menu.clearActivation, onSelect: () => cb.onSetActivation(el, "") },
               ]),
             ),
         });
@@ -348,43 +339,43 @@ export function drawOverlay(
         a.push(
           hasActivationMarker(el)
             ? {
-                label: "矢印の向きを入れ替える",
+                label: msg.menu.reverseArrow,
                 onSelect: () => {},
                 disabled: true,
-                note: "活性化マーカー (+/-) 付きは反転できません",
+                note: msg.menu.reverseDisabledNote,
               }
-            : { label: "矢印の向きを入れ替える", onSelect: () => cb.onReverse(el) },
+            : { label: msg.menu.reverseArrow, onSelect: () => cb.onReverse(el) },
         );
         // 送信元/送信先のアクターを別のアクターに付け替える (フローチャートのエッジ再接続と同等)。
         // 活性化マーカー ([+-]) 付きは付け替えると起動/終了の対応が崩れるため反転と同様に無効化する
         const reconnect = (label: string, end: "from" | "to", who: string): MenuAction =>
           hasActivationMarker(el)
-            ? { label, onSelect: () => {}, disabled: true, note: "活性化マーカー (+/-) 付きは変更できません" }
+            ? { label, onSelect: () => {}, disabled: true, note: msg.menu.reconnectDisabledNote }
             : {
                 label,
                 onSelect: () =>
-                  startPickActor(`新しい${who}のアクター (箱か縦線) をクリック (Esc で取消)`, isActorTarget, (id) => cb.onReconnectMessage(el, end, id), hitEl),
+                  startPickActor(msg.hint.pickReconnectActor(who), isActorTarget, (id) => cb.onReconnectMessage(el, end, id), hitEl),
               };
-        a.push(reconnect("送信元を変更", "from", "送信元"));
-        a.push(reconnect("送信先を変更", "to", "送信先"));
+        a.push(reconnect(msg.menu.changeFrom, "from", msg.menu.sourceNoun));
+        a.push(reconnect(msg.menu.changeTo, "to", msg.menu.targetNoun));
       }
       addWrapInBlock(a, el, anchor, hitEl);
     }
     if (el.kind === "block" && el.block) {
       const block = el.block;
       a.push({
-        label: "種別を変更 ▸",
+        label: msg.menu.changeType,
         onSelect: () => setActive(openMenu(overlayEl, anchor(), hostRect(), blockTypeActions(el))),
       });
       // 分岐 (else/and) の追加は alt/par のみ。分岐ラベルの編集はラベル自体 (kind "branch")
       // を直接クリックして行う (sectionTitle にアンカーするため入力欄が正しい位置に出る)
-      if (block.type === "alt") a.push({ label: "else を追加", onSelect: () => cb.onAddBranch(el) });
-      else if (block.type === "par") a.push({ label: "and を追加", onSelect: () => cb.onAddBranch(el) });
-      a.push({ label: "ブロックを解除 (囲みを残さない)", onSelect: () => cb.onUnwrapBlock(el) });
+      if (block.type === "alt") a.push({ label: msg.menu.addElse, onSelect: () => cb.onAddBranch(el) });
+      else if (block.type === "par") a.push({ label: msg.menu.addAnd, onSelect: () => cb.onAddBranch(el) });
+      a.push({ label: msg.menu.unwrapBlock, onSelect: () => cb.onUnwrapBlock(el) });
     }
     if (el.kind === "note" && el.placementRange) {
       a.push({
-        label: "配置を変更 ▸",
+        label: msg.menu.changePlacement,
         onSelect: () => setActive(openMenu(overlayEl, anchor(), hostRect(), notePlacementActions(el))),
       });
       addWrapInBlock(a, el, anchor, hitEl);
@@ -397,18 +388,18 @@ export function drawOverlay(
   // ノートの配置変更: 配置を選び、対象アクター (箱か縦線) をクリックして確定する
   const notePlacementActions = (el: EditableElement): MenuAction[] => {
     const pickOne = (placement: NotePlacement) =>
-      startPickActor("ノートを置くアクター (箱か縦線) をクリック (Esc で取消)", isActorTarget, (id) =>
+      startPickActor(msg.hint.pickNoteActor, isActorTarget, (id) =>
         cb.onSetNotePlacement(el, placement, [id]),
       );
     return [
-      { label: "右側に", onSelect: () => pickOne("right") },
-      { label: "左側に", onSelect: () => pickOne("left") },
-      { label: "重ねる (1 つ)", onSelect: () => pickOne("over") },
+      { label: msg.menu.placeRight, onSelect: () => pickOne("right") },
+      { label: msg.menu.placeLeft, onSelect: () => pickOne("left") },
+      { label: msg.menu.placeOverOne, onSelect: () => pickOne("over") },
       {
-        label: "またぐ (2 つ) ▸",
+        label: msg.menu.spanTwoNote,
         onSelect: () =>
-          startPickActor("1 人目のアクター (箱か縦線) をクリック (Esc で取消)", isActorTarget, (first) =>
-            startPickActor("2 人目のアクター (箱か縦線) をクリック (Esc で取消)", isActorTarget, (second) =>
+          startPickActor(msg.hint.pickFirstActor, isActorTarget, (first) =>
+            startPickActor(msg.hint.pickSecondActor, isActorTarget, (second) =>
               cb.onSetNotePlacement(el, "over", [first, second]),
             ),
           ),
@@ -418,7 +409,7 @@ export function drawOverlay(
 
   const shapeActions = (el: EditableElement): MenuAction[] =>
     SHAPE_CHOICES.map((s) => ({
-      label: s.name,
+      label: msg.shape[s.key],
       onSelect: () => cb.onSetShape(el, s.open, s.close),
     }));
 
@@ -428,12 +419,13 @@ export function drawOverlay(
     const block = el.block!;
     const hasBranches = block.branches.length > 0;
     const branchKw = hasBranches ? block.branches[0].keyword : "";
-    return BLOCK_TYPES.map((t) => {
-      if (t.type === block.type) return { label: `${t.name} (現在)`, onSelect: () => {}, disabled: true };
-      if (hasBranches && t.type !== "alt" && t.type !== "par") {
-        return { label: t.name, onSelect: () => {}, disabled: true, note: `${branchKw} 分岐があるため変更できません` };
+    return BLOCK_TYPES.map((type) => {
+      const name = msg.blockType[type];
+      if (type === block.type) return { label: msg.menu.currentLabel(name), onSelect: () => {}, disabled: true };
+      if (hasBranches && type !== "alt" && type !== "par") {
+        return { label: name, onSelect: () => {}, disabled: true, note: msg.menu.branchExistsNote(branchKw) };
       }
-      return { label: t.name, onSelect: () => cb.onSetBlockType(el, t.type) };
+      return { label: name, onSelect: () => cb.onSetBlockType(el, type) };
     });
   };
 
@@ -441,16 +433,16 @@ export function drawOverlay(
   // 「2 者にまたがる」は相手アクターを選んでから高さを指定する。
   const noteActions = (actorId: string, hitEl: Element): MenuAction[] => {
     const place = (placement: NotePlacement, ids: string[], where: string) =>
-      startPlaceNote(placement, ids, `${where}のノートを置く高さをライフライン上でクリック (Esc で取消)`, hitEl);
+      startPlaceNote(placement, ids, msg.hint.placeNoteHeight(where), hitEl);
     return [
-      { label: "右側に", onSelect: () => place("right", [actorId], `${actorId} の右`) },
-      { label: "左側に", onSelect: () => place("left", [actorId], `${actorId} の左`) },
-      { label: "重ねる", onSelect: () => place("over", [actorId], `${actorId} 上`) },
+      { label: msg.menu.placeRight, onSelect: () => place("right", [actorId], msg.menu.rightOf(actorId)) },
+      { label: msg.menu.placeLeft, onSelect: () => place("left", [actorId], msg.menu.leftOf(actorId)) },
+      { label: msg.menu.placeOver, onSelect: () => place("over", [actorId], msg.menu.over(actorId)) },
       {
-        label: "2 者にまたがる ▸",
+        label: msg.menu.spanTwoActors,
         onSelect: () =>
           startPickActor(
-            `${actorId} とまたぐ相手のアクター (箱か縦線) をクリック (Esc で取消)`,
+            msg.hint.pickSpanPartner(actorId),
             isActorTarget,
             (other) => place("over", [actorId, other], `${actorId},${other}`),
             hitEl,
@@ -462,14 +454,14 @@ export function drawOverlay(
   // ライフラインのクリック位置 (anchorId) を使い、その高さへ直接ノートを追加するサブメニュー。
   // アクターメニュー経由 (noteActions) と違い、高さは既に決まっているので再クリック不要。
   const lifelineNoteActions = (actorId: string, anchorId: string | null, source: Element): MenuAction[] => [
-    { label: "右側に", onSelect: () => cb.onAddNote("right", [actorId], anchorId) },
-    { label: "左側に", onSelect: () => cb.onAddNote("left", [actorId], anchorId) },
-    { label: "重ねる", onSelect: () => cb.onAddNote("over", [actorId], anchorId) },
+    { label: msg.menu.placeRight, onSelect: () => cb.onAddNote("right", [actorId], anchorId) },
+    { label: msg.menu.placeLeft, onSelect: () => cb.onAddNote("left", [actorId], anchorId) },
+    { label: msg.menu.placeOver, onSelect: () => cb.onAddNote("over", [actorId], anchorId) },
     {
-      label: "2 者にまたがる ▸",
+      label: msg.menu.spanTwoActors,
       onSelect: () =>
         startPickActor(
-          `${actorId} とまたぐ相手のアクター (箱か縦線) をクリック (Esc で取消)`,
+          msg.hint.pickSpanPartner(actorId),
           isActorTarget,
           (other) => cb.onAddNote("over", [actorId, other], anchorId),
           source,
@@ -479,15 +471,15 @@ export function drawOverlay(
 
   function addRemove(actions: MenuAction[], el: EditableElement): void {
     if (el.removeLines && el.removeLines.length > 0) {
-      actions.push({ label: "削除", onSelect: () => cb.onRemove(el) });
+      actions.push({ label: msg.menu.delete, onSelect: () => cb.onRemove(el) });
     }
   }
 
   // 並び替え (1 文 = 1 行の入れ替え)。端や図ヘッダ際では editor 側が no-op で弾く
   function addMove(actions: MenuAction[], el: EditableElement): void {
     if (!MOVABLE_KINDS.has(el.kind) || !el.removeLines || el.removeLines.length === 0) return;
-    actions.push({ label: "1 行上に移動", onSelect: () => cb.onMoveLine(el, "up") });
-    actions.push({ label: "1 行下に移動", onSelect: () => cb.onMoveLine(el, "down") });
+    actions.push({ label: msg.menu.moveUp, onSelect: () => cb.onMoveLine(el, "up") });
+    actions.push({ label: msg.menu.moveDown, onSelect: () => cb.onMoveLine(el, "down") });
   }
 
   // 始点をこの要素とし、終端の要素 (メッセージ/ノート) をクリックで指定して囲む。
@@ -495,20 +487,20 @@ export function drawOverlay(
   const isWrappable = (e: EditableElement) => e.kind === "message" || e.kind === "note";
   function addWrapInBlock(actions: MenuAction[], el: EditableElement, anchor: () => DOMRect, hitEl: Element): void {
     actions.push({
-      label: "ブロックで囲む ▸",
+      label: msg.menu.wrapInBlock,
       onSelect: () =>
         setActive(
           openMenu(
             overlayEl,
             anchor(),
             hostRect(),
-            BLOCK_TYPES.map((t) => ({
-              label: t.name,
+            BLOCK_TYPES.map((type) => ({
+              label: msg.blockType[type],
               onSelect: () =>
                 startPickEl(
-                  `${t.name} で囲む終端の要素 (メッセージかノート) をクリック (Esc で取消)`,
+                  msg.hint.pickWrapEnd(msg.blockType[type]),
                   isWrappable,
-                  (to) => cb.onWrapBlock(el, to, t.type),
+                  (to) => cb.onWrapBlock(el, to, type),
                   hitEl,
                 ),
             })),
@@ -547,14 +539,14 @@ export function drawOverlay(
   // 矢印を直接クリックしなくても、高さ (どのメッセージの上/下か) で範囲を指定できる
   function addWrapRange(actions: MenuAction[], y1: number, anchorRect: DOMRect, source: Element): void {
     actions.push({
-      label: "ブロックで囲む ▸",
+      label: msg.menu.wrapInBlock,
       onSelect: () =>
         setActive(
           openMenu(
             overlayEl,
             anchorRect,
             hostRect(),
-            BLOCK_TYPES.map((t) => ({ label: t.name, onSelect: () => startWrapEnd(y1, t.type, source) })),
+            BLOCK_TYPES.map((type) => ({ label: msg.blockType[type], onSelect: () => startWrapEnd(y1, type, source) })),
           ),
         ),
     });
@@ -648,14 +640,14 @@ export function drawOverlay(
       band.style.top = `${r.top - overlayRect.top}px`;
       band.style.width = `${LIFELINE_BAND_PX}px`;
       band.style.height = `${r.height}px`;
-      band.title = `${from}: 左クリックでこの位置からメッセージ / 右クリック・長押しでメニュー`;
+      band.title = msg.title.lifeline(from);
       // クリック高さ y からこの縦線を起点にメッセージ送信先をピックさせる (ここから矢印が伸びる)
       const startLifelineMessage = (clientY: number) => {
         const anchorId = insertionAnchor(elements, clientY);
         const lineRect = el.el.getBoundingClientRect();
         const startAt = { x: lineRect.left + lineRect.width / 2, y: clientY };
         startPickActor(
-          `${from} からの送信先 (アクターの箱か縦線) をクリック (Esc で取消)`,
+          msg.hint.pickLifelineTarget(from),
           isActorTarget,
           (to) => cb.onInsertMessage(from, to, anchorId),
           band,
@@ -668,9 +660,9 @@ export function drawOverlay(
         const anchorId = insertionAnchor(elements, clientY);
         const at = pointRect(clientX, clientY);
         const menu: MenuAction[] = [
-          { label: "メッセージを追加", onSelect: () => startLifelineMessage(clientY) },
+          { label: msg.menu.addMessage, onSelect: () => startLifelineMessage(clientY) },
           {
-            label: "ノートを追加 ▸",
+            label: msg.menu.addNote,
             onSelect: () => setActive(openMenu(overlayEl, at, hostRect(), lifelineNoteActions(from, anchorId, band))),
           },
         ];
@@ -733,7 +725,7 @@ export function drawOverlay(
         lhit.style.top = `${r.top - overlayRect.top}px`;
         lhit.style.width = `${r.width}px`;
         lhit.style.height = `${r.height}px`;
-        lhit.title = `${el.id}: クリックでメニュー / ダブルクリックでラベル編集`;
+        lhit.title = msg.title.menuAndDblclick(el.id);
         overlayEl.append(lhit);
         wire(lhit, el, () => labelEl.getBoundingClientRect());
       }
@@ -756,7 +748,7 @@ export function drawOverlay(
       band.style.top = `${lr.top + lr.height / 2 - MSG_BAND_PX / 2 - overlayRect.top}px`;
       band.style.width = `${lr.width}px`;
       band.style.height = `${MSG_BAND_PX}px`;
-      band.title = `${el.id}: クリックでメニュー`;
+      band.title = msg.title.menuOnly(el.id);
       overlayEl.append(band);
       // 帯の anchor は矢印線でなくラベル (bounds)。矢印をダブルクリックしても入力欄が
       // ラベルの位置に出る (矢印位置に出てズレるのを防ぐ)
@@ -771,7 +763,7 @@ export function drawOverlay(
     hit.style.top = `${r.top - overlayRect.top}px`;
     hit.style.width = `${r.width}px`;
     hit.style.height = `${r.height}px`;
-    hit.title = `${el.id}: クリックでメニュー / ダブルクリックでラベル編集`;
+    hit.title = msg.title.menuAndDblclick(el.id);
     overlayEl.append(hit);
     wire(hit, el, bounds);
   }

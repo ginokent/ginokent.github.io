@@ -1,5 +1,6 @@
 import { firstKeyword, pickAdapter } from "./core/adapter";
 import { applyEdits, buildFieldEdits } from "./core/edit";
+import { defaultLocale, getMessages, type Locale, type Messages } from "./core/i18n";
 import { History } from "./core/history";
 import { copyText, exportPng, exportSvg } from "./core/export";
 import { save } from "./core/persist";
@@ -37,16 +38,24 @@ export interface EditorElements {
   error: HTMLElement; // 構文エラー表示
 }
 
+export interface EditorOptions {
+  /** メニュー・ヒント等の UI 文言のロケール (既定は ja)。親サイトは現在のロケールを渡す */
+  locale?: Locale;
+}
+
 export class Editor {
   private elements: EditableElement[] = [];
   private overlayActive = false; // オーバーレイが編集モードで表示中か (リサイズ再配置の可否)
   private readonly history = new History();
+  private msg: Messages; // オーバーレイへ渡す UI 文言
 
   constructor(
     private readonly dom: EditorElements,
     /** 図の再構築 (図種変化を含む) ごとに呼ぶ。ツールバーの図種別表示更新に使う */
     private readonly onRender?: () => void,
+    options?: EditorOptions,
   ) {
+    this.msg = getMessages(options?.locale ?? defaultLocale);
     // テキスト直接編集にも追従し、履歴へ記録する (入力デバウンス)
     let timer: number | undefined;
     dom.source.addEventListener("input", () => {
@@ -170,8 +179,14 @@ export class Editor {
     const adapter = pickAdapter(text);
     this.elements = adapter ? adapter.build(text, svg) : [];
     this.overlayActive = true;
-    drawOverlay(this.dom.overlay, this.dom.stage, this.elements, this.overlayCallbacks());
+    drawOverlay(this.dom.overlay, this.dom.stage, this.elements, this.overlayCallbacks(), this.msg);
     this.onRender?.();
+  }
+
+  /** UI 文言のロケールを切り替え、オーバーレイ (メニュー・ヒント・title) を貼り直す */
+  setLocale(locale: Locale): void {
+    this.msg = getMessages(locale);
+    this.redrawOverlay();
   }
 
   /** 現在の図種 (ツールバーの図種別ボタン表示に使う)。未対応図種は null */
@@ -196,7 +211,7 @@ export class Editor {
   /** 図を再描画せず、現在の要素でオーバーレイ (当たり判定) だけ貼り直す (リサイズ追従) */
   private redrawOverlay(): void {
     if (!this.overlayActive) return; // エラー表示中などは貼り直さない
-    drawOverlay(this.dom.overlay, this.dom.stage, this.elements, this.overlayCallbacks());
+    drawOverlay(this.dom.overlay, this.dom.stage, this.elements, this.overlayCallbacks(), this.msg);
   }
 
   /** オーバーレイ操作のコールバック (rebuild / redrawOverlay で共用) */
