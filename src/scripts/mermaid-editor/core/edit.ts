@@ -13,7 +13,9 @@ export function buildFieldEdits(
   for (const field of fields) {
     const value = changes[field.name];
     if (value === undefined || value === field.value) continue;
-    for (const range of field.ranges) edits.push({ range, newText: value });
+    // 素の値を図記法へ整形してから書き戻す (flowchart ラベルの引用符付けなど)
+    const newText = field.format ? field.format(value) : value;
+    for (const range of field.ranges) edits.push({ range, newText });
   }
   return edits;
 }

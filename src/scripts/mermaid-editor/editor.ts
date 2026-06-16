@@ -6,6 +6,8 @@ import { copyText, exportPng, exportSvg } from "./core/export";
 import { save } from "./core/persist";
 import { parseError, renderInto, validate } from "./core/render";
 import { tokenizeSequence } from "./core/source/sequence";
+import { flowchartDeclInsertEdit } from "./core/source/flowchart";
+import { createSubgraphBlockEdit, subgraphAddNodeEdit, tokenizeSubgraphs } from "./core/source/subgraph";
 import {
   INDENT,
   appendStatement,
@@ -220,6 +222,7 @@ export class Editor {
       onApply: (el, changes) => void this.apply(el, changes),
       onAddEdge: (from, to) => void this.addEdge(from, to),
       onAddConnectedNode: (from) => void this.addConnectedNode(from),
+      onAddToSubgraph: (nodeId, sgId) => void this.addToSubgraph(nodeId, sgId),
       onAddMessage: (from, to) => void this.addMessage(from, to),
       onInsertMessage: (from, to, anchor) => void this.insertMessage(from, to, anchor),
       onRemove: (el) => void this.remove(el),
@@ -252,11 +255,11 @@ export class Editor {
     else if (this.isSequence()) await this.addParticipant();
   }
 
-  /** 新規ノードを追加する */
+  /** 新規ノードを追加する (宣言は宣言ブロックの末尾へまとめる) */
   private async addNode(): Promise<void> {
     const ids = this.refIds("node");
     const id = freshNodeId(ids);
-    await this.commitEdits([appendStatement(this.dom.source.value, `${id}[新規ノード]`)]);
+    await this.commitEdits([flowchartDeclInsertEdit(this.dom.source.value, `${id}[新規ノード]`)]);
   }
 
   /** 新規参加者を追加する */
@@ -286,13 +289,39 @@ export class Editor {
     await this.commitEdits([appendStatement(this.dom.source.value, `${fromId} --> ${toId}`)]);
   }
 
-  /** from から新規ノードへ矢印を引く (ノードと辺を 1 文で生成) */
+  /**
+   * from から新規ノードへ矢印を引く。ノード宣言は宣言ブロック (上) へ、矢印は文末 (下) へ
+   * 分けて挿入する (「宣言は上・矢印は下」の流儀を維持する)。
+   */
   async addConnectedNode(fromId: string): Promise<void> {
     if (!this.isFlowchart()) return;
+    const text = this.dom.source.value;
     const id = freshNodeId(this.refIds("node"));
+    // 宣言 (上) と矢印 (下) を別々のゼロ幅挿入にする。宣言ブロックが文末にある単純な図では
+    // 両者の挿入位置が一致するため、宣言が矢印より上に来るよう矢印を先に渡す
+    // (applyEdits は同位置では配列の後ろの編集ほどテキスト上で手前 (上) に挿入する)。
     await this.commitEdits([
-      appendStatement(this.dom.source.value, `${fromId} --> ${id}[新規ノード]`),
+      appendStatement(text, `${fromId} --> ${id}`),
+      flowchartDeclInsertEdit(text, `${id}[新規ノード]`),
     ]);
+  }
+
+  /**
+   * ノードをサブグラフへ追加する。subgraphId 指定なら既存サブグラフの end 直前へ bare 参照を
+   * 挿入し、null なら採番した id で新しい subgraph ブロックを文末に生成してノードを入れる。
+   */
+  async addToSubgraph(nodeId: string, subgraphId: string | null): Promise<void> {
+    if (!this.isFlowchart()) return;
+    const text = this.dom.source.value;
+    if (subgraphId !== null) {
+      const edit = subgraphAddNodeEdit(text, subgraphId, nodeId);
+      if (edit) await this.commitEdits([edit]);
+      return;
+    }
+    // 新規作成: 既存のサブグラフ id・ノード id と衝突しない id を採番する
+    const existing = [...tokenizeSubgraphs(text).map((s) => s.id), ...this.refIds("node")];
+    const freshId = freshNodeId(existing, "sg");
+    await this.commitEdits([createSubgraphBlockEdit(text, nodeId, freshId, "サブグラフ")]);
   }
 
   /** from から to へのメッセージを追加する (文末に追記) */

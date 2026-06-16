@@ -414,6 +414,11 @@ const m = getMessages(locale).chrome;
     background: #eff6ff;
   }
 
+  /* サブメニューを開いている親項目を、どれを展開中か分かるよう常時ハイライトする */
+  .mermaid-editor .menu-item.is-open {
+    background: #eff6ff;
+  }
+
   /* 無効な項目: 操作不可であることを色とカーソルで示す (理由は note を常時表示) */
   .mermaid-editor .menu-item--disabled {
     color: #9ca3af;

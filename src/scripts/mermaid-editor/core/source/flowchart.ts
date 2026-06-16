@@ -1,4 +1,5 @@
-import type { EdgeLabelToken, EdgeToken, NodeToken, SourceRange } from "../types";
+import type { EdgeLabelToken, EdgeToken, NodeToken, SourceRange, TextEdit } from "../types";
+import { allLineRanges, appendStatement, headerLineIndex, INDENT, insertStatement } from "../structure";
 
 // ソースモデル層 (フローチャート)
 //
@@ -37,6 +38,25 @@ export interface FlowchartTokens {
 
 function isIdChar(ch: string): boolean {
   return /[A-Za-z0-9_]/.test(ch);
+}
+
+// unquoted のラベルに含まれると mermaid の parse が壊れる文字。
+// () [] {} は形状括弧、| はエッジラベル区切り、" は引用符、@ は v11 の @{} 形状構文。
+// これらを含むラベルは書き戻し時に "..." で囲む (quoteFlowchartLabel)。
+const NEEDS_QUOTE = /[()[\]{}|"@]/u;
+
+/** ラベルの素値を flowchart 記法へ整形する。特殊文字を含むときだけ引用符で囲む */
+export function quoteFlowchartLabel(value: string): string {
+  if (!NEEDS_QUOTE.test(value)) return value;
+  return `"${value.replace(/"/gu, "&quot;")}"`;
+}
+
+/** 括弧内のラベル領域 (引用符を含み得る) から素の値を取り出す */
+export function unquoteFlowchartLabel(raw: string): string {
+  if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
+    return raw.slice(1, -1).replace(/&quot;/giu, '"');
+  }
+  return raw;
 }
 
 export function tokenizeFlowchart(text: string): FlowchartTokens {
@@ -83,8 +103,9 @@ export function tokenizeFlowchart(text: string): FlowchartTokens {
     if (ch === "|") {
       const close = findClose(text, i + 1, "|");
       if (close !== -1) {
-        const range = innerLabelRange(text, i + 1, close);
-        const value = text.slice(range.start, range.end);
+        // 範囲は区切り | の内側全体 (引用符があれば含む)。値は素値へ戻す
+        const range: SourceRange = { start: i + 1, end: close };
+        const value = unquoteFlowchartLabel(text.slice(range.start, range.end));
         edgeLabels.push({ label: value, labelRange: range });
         if (pendingLink) pendingLabel = { value, range };
         i = close + 1;
@@ -129,9 +150,11 @@ export function tokenizeFlowchart(text: string): FlowchartTokens {
       const closeAt = findClose(text, labelStart, shape.close);
       if (closeAt !== -1) {
         if (!decls.has(id)) {
-          const range = innerLabelRange(text, labelStart, closeAt);
+          // ラベル範囲は括弧の内側全体 (引用符があれば含む)。書き戻し時に
+          // quoteFlowchartLabel で必要に応じ引用符を付け直すため、範囲ごと置換する
+          const range: SourceRange = { start: labelStart, end: closeAt };
           decls.set(id, {
-            label: text.slice(range.start, range.end),
+            label: unquoteFlowchartLabel(text.slice(range.start, range.end)),
             labelRange: range,
             shapeOpen: { start: j, end: labelStart },
             shapeClose: { start: closeAt, end: closeAt + shape.close.length },
@@ -200,14 +223,6 @@ function findClose(text: string, start: number, close: string): number {
   return text.indexOf(close, start);
 }
 
-function innerLabelRange(text: string, start: number, closeAt: number): SourceRange {
-  if (text[start] === '"') {
-    const q = text.indexOf('"', start + 1);
-    if (q !== -1 && q <= closeAt) return { start: start + 1, end: q };
-  }
-  return { start, end: closeAt };
-}
-
 /** オフセット a を含む行頭から、b を含む行末 (改行の手前) までの範囲 */
 function lineSpan(text: string, a: number, b: number): SourceRange {
   let s = a;
@@ -231,4 +246,45 @@ function pushRange(map: Map<string, SourceRange[]>, key: string, range: SourceRa
   const arr = map.get(key);
   if (arr) arr.push(range);
   else map.set(key, [range]);
+}
+
+/**
+ * 新しいノード宣言を「宣言ブロック」の末尾へ挿入する TextEdit を返す。
+ *
+ * 宣言ブロック = 先頭付近の「純粋なノード宣言行」(ノード宣言を含み、矢印を含まない行)。
+ * その最後の行の直後へ挿入する。これにより「宣言は上にまとめ、矢印は下に書く」流儀
+ * (ユーザー要望) を維持できる。純粋宣言行が無ければヘッダ直後、ヘッダも無ければ文末へ。
+ *
+ * 行の判定はトークナイザ結果で行う (ラベル内の `--` 等を矢印と誤認しないため):
+ * ノード宣言の開き括弧がある行のうち、どのエッジの statementRange にも含まれない行が
+ * 「純粋なノード宣言行」である。
+ */
+export function flowchartDeclInsertEdit(text: string, statement: string): TextEdit {
+  const { nodes, edges } = tokenizeFlowchart(text);
+  const lines = allLineRanges(text);
+  const lineOf = (offset: number) => lines.findIndex((r) => offset >= r.start && offset <= r.end);
+
+  // 矢印 (エッジ) が占める行を集める。これらの行のノード宣言はインライン宣言なので除外する
+  const edgeLines = new Set<number>();
+  for (const e of edges) {
+    const from = lineOf(e.statementRange.start);
+    const to = lineOf(e.statementRange.end);
+    for (let i = from; i <= to; i++) edgeLines.add(i);
+  }
+
+  // 純粋なノード宣言行のうち最も下の行をアンカーにする
+  let anchorIdx = -1;
+  for (const n of nodes) {
+    const li = lineOf(n.shapeOpen.start);
+    if (li >= 0 && !edgeLines.has(li)) anchorIdx = Math.max(anchorIdx, li);
+  }
+  if (anchorIdx >= 0) return insertStatement(text, lines[anchorIdx], "after", statement);
+
+  // 宣言行が無ければヘッダ直後へ (本文インデント)。ヘッダも無ければ文末へ
+  const headerIdx = headerLineIndex(text);
+  if (headerIdx >= 0) {
+    const h = lines[headerIdx];
+    return { range: { start: h.end, end: h.end }, newText: `\n${INDENT}${statement}` };
+  }
+  return appendStatement(text, statement);
 }

@@ -22,15 +22,19 @@ export interface TextEdit {
  */
 export interface EditableField {
   name: string; // 例: "label" / "id"
-  value: string; // 現在値
+  value: string; // 現在値 (図記法上の引用符・エスケープを外した素の値)
   ranges: SourceRange[]; // この値が現れる全範囲 (surgical edit の対象)
+  // 書き戻し時に素の値を図記法へ整形する (図種固有)。例: flowchart のラベルは
+  // 特殊文字 (() [] {} | " @) を含むと unquoted では parse が壊れるため引用符で囲む。
+  // 省略時は値をそのまま書き戻す (sequence のラベル等、整形不要なフィールド)。
+  format?: (value: string) => string;
 }
 
 /** ソースモデル: トークナイザが算出したノード宣言の位置情報 */
 export interface NodeToken {
   id: string; // 論理ノード ID (例: "A")
-  label: string; // ラベル文字列 (引用符の内側は除く)
-  labelRange: SourceRange; // ラベル文字列のテキスト範囲
+  label: string; // ラベルの素値 (引用符・エスケープを外した文字列)
+  labelRange: SourceRange; // 括弧内側全体の範囲 (引用符があれば含む)。書き戻しで丸ごと置換する
   idRanges: SourceRange[]; // ID が現れる全範囲 (宣言 + 参照)。リネーム用
   removeLines: SourceRange[]; // ID が現れる全行の範囲 (重複なし)。カスケード削除用
   shapeOpen: SourceRange; // 形状の開き括弧の範囲。形状変更用
@@ -39,8 +43,8 @@ export interface NodeToken {
 
 /** ソースモデル: エッジラベル (|text| 形式) の位置情報 */
 export interface EdgeLabelToken {
-  label: string; // ラベル文字列 (引用符の内側は除く)
-  labelRange: SourceRange; // ラベル文字列のテキスト範囲
+  label: string; // ラベルの素値 (引用符・エスケープを外した文字列)
+  labelRange: SourceRange; // 区切り | 内側全体の範囲 (引用符があれば含む)
 }
 
 /** ソースモデル: エッジ (A --> B) の位置情報 */
@@ -75,6 +79,24 @@ export interface NodeVisual {
 export interface EdgeLabelVisual {
   text: string; // 表示テキスト
   el: SVGGElement; // 対応する g.edgeLabel
+}
+
+/** ソースモデル: subgraph (subgraph id[title] … end) の位置情報 */
+export interface SubgraphToken {
+  id: string; // cluster 相関用 ID (明示 id、または id 省略時の自動 subGraph<文書順index>)
+  title: string; // 表示タイトルの素値
+  titleRange: SourceRange; // タイトルの編集範囲 (角括弧内 / 単語 / 引用符内 / タイトル文字列)
+  quoteTitle: boolean; // 角括弧形式か (true なら書き戻しに quoteFlowchartLabel を使う)
+  headerRange: SourceRange; // "subgraph ..." 行の範囲
+  endRange: SourceRange; // 対応する "end" 行の範囲 (ノードはこの直前へ挿入する)
+  indent: string; // ヘッダ行のインデント (本文インデントの算出に使う)
+}
+
+/** 視覚モデル: SVG の subgraph クラスタ (g.cluster) とラベル要素 */
+export interface ClusterVisual {
+  id: string; // cluster の SVG id (末尾が `-<subgraph id>`)
+  el: SVGGElement; // g.cluster
+  labelEl: SVGGraphicsElement; // g.cluster-label (タイトル。当たり判定・編集アンカー)
 }
 
 // ---- シーケンス図 ----
@@ -142,7 +164,7 @@ export interface TextVisual {
 /** 3 モデルを突き合わせた編集可能要素 */
 export interface EditableElement {
   id: string;
-  kind: "node" | "edge" | "actor" | "message" | "note" | "block" | "branch" | "lifeline" | "title";
+  kind: "node" | "edge" | "actor" | "message" | "note" | "block" | "branch" | "lifeline" | "title" | "subgraph";
   el: SVGGraphicsElement; // 視覚モデル由来 (g / text いずれも可)
   fields: EditableField[]; // ソースモデル由来 (空なら編集不可)
   refId?: string; // ソース上の論理参照 ID (ノード ID / アクター ID)。接続/追加用

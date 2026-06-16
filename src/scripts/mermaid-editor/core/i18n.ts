@@ -49,6 +49,8 @@ export interface Messages {
     arrowToNewNode: string;
     arrowToExistingNode: string;
     changeShape: string;
+    addToSubgraph: string;
+    newSubgraph: string;
     addMessage: string;
     addNote: string;
     addNoteAbove: string;
@@ -197,6 +199,8 @@ const ja: Messages = {
     arrowToNewNode: "新規ノードへ矢印",
     arrowToExistingNode: "既存ノードへ矢印",
     changeShape: "形状を変更 ▸",
+    addToSubgraph: "サブグラフに追加 ▸",
+    newSubgraph: "新規作成",
     addMessage: "メッセージを追加",
     addNote: "ノートを追加 ▸",
     addNoteAbove: "上に追加",
@@ -330,6 +334,8 @@ const en: Messages = {
     arrowToNewNode: "Arrow to new node",
     arrowToExistingNode: "Arrow to existing node",
     changeShape: "Change shape ▸",
+    addToSubgraph: "Add to subgraph ▸",
+    newSubgraph: "New subgraph",
     addMessage: "Add message",
     addNote: "Add note ▸",
     addNoteAbove: "Add above",
