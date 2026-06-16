@@ -235,6 +235,7 @@ export class Editor {
       onSetBlockType: (el, type) => void this.setBlockType(el, type),
       onAddBranch: (el) => void this.addBranch(el),
       onAddNote: (placement, actorIds, anchor) => void this.addNote(placement, actorIds, anchor),
+      onAddNoteAtMessage: (el, position) => void this.addNoteAtMessage(el, position),
       onSetNotePlacement: (el, placement, actorIds) => void this.setNotePlacement(el, placement, actorIds),
     };
   }
@@ -316,6 +317,22 @@ export class Editor {
   async addNote(placement: NotePlacement, actorIds: string[], anchorId: string | null): Promise<void> {
     if (!this.isSequence() || actorIds.length === 0) return;
     await this.insertAtAnchor(`Note ${noteHead(placement, actorIds)}: メモ`, anchorId);
+  }
+
+  /**
+   * メッセージの直前 (above) / 直後 (below) に、関与アクターをまたぐノートを追加する。
+   * 配置は送信元・送信先をまたぐ `Note over from,to` (自己メッセージは `Note over from`)。
+   */
+  async addNoteAtMessage(el: EditableElement, position: "above" | "below"): Promise<void> {
+    if (!this.isSequence() || el.kind !== "message" || !el.endpoints) return;
+    const line = el.removeLines?.[0];
+    if (!line) return;
+    const text = this.dom.source.value;
+    const from = text.slice(el.endpoints.from.start, el.endpoints.from.end);
+    const to = text.slice(el.endpoints.to.start, el.endpoints.to.end);
+    const actorIds = from === to ? [from] : [from, to];
+    const stmt = `Note ${noteHead("over", actorIds)}: メモ`;
+    await this.commitEdits([insertStatement(text, line, position === "above" ? "before" : "after", stmt)]);
   }
 
   /** 既存ノートの配置句 (over X,Y / right of X 等) を置換する */

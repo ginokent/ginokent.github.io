@@ -51,6 +51,8 @@ export interface Messages {
     changeShape: string;
     addMessage: string;
     addNote: string;
+    addNoteAbove: string;
+    addNoteBelow: string;
     changeType: string;
     activation: string;
     activate: string;
@@ -197,6 +199,8 @@ const ja: Messages = {
     changeShape: "形状を変更 ▸",
     addMessage: "メッセージを追加",
     addNote: "ノートを追加 ▸",
+    addNoteAbove: "上に追加",
+    addNoteBelow: "下に追加",
     changeType: "種別を変更 ▸",
     activation: "アクティベーション ▸",
     activate: "対象を起動 (+)",
@@ -328,6 +332,8 @@ const en: Messages = {
     changeShape: "Change shape ▸",
     addMessage: "Add message",
     addNote: "Add note ▸",
+    addNoteAbove: "Add above",
+    addNoteBelow: "Add below",
     changeType: "Change type ▸",
     activation: "Activation ▸",
     activate: "Activate (+)",

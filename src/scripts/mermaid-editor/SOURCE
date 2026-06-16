@@ -3,5 +3,5 @@
 # グルー (ページ枠・bootstrap・CSS) は src/pages/tools/mermaid-editor.astro 側で保守する。
 repo=ginokent/mermaid-editor
 ref=origin/main
-commit=8f227cf8a05fa9b1d6af45fbe4ac30374021fbed
-synced_at=2026-06-16 17:56 JST
+commit=1ab9e786d890acf0b00a531e319faa92ac68c4cd
+synced_at=2026-06-16 19:41 JST
