@@ -40,3 +40,20 @@ export async function renderInto(container: HTMLElement, text: string): Promise<
   if (!root) throw new Error("rendered svg root not found");
   return root;
 }
+
+/**
+ * エクスポート専用に SVG 文字列を生成する。htmlLabels を無効化して描画するため、
+ * flowchart のラベルが foreignObject (HTML) でなく <text> になる。
+ * foreignObject を含む SVG を canvas へ描くとブラウザが canvas を汚染し toBlob が失敗するため、
+ * PNG 書き出しはこの foreignObject 無し SVG をラスタライズする (編集用の描画は htmlLabels のまま)。
+ */
+export async function renderExportSvg(text: string): Promise<string> {
+  ensureInit();
+  mermaid.initialize({ startOnLoad: false, securityLevel: "loose", htmlLabels: false });
+  try {
+    const { svg } = await mermaid.render(`mermaid-export-${Date.now()}`, text);
+    return svg;
+  } finally {
+    mermaid.initialize({ startOnLoad: false, securityLevel: "loose" }); // 既定 (htmlLabels 有効) へ戻す
+  }
+}

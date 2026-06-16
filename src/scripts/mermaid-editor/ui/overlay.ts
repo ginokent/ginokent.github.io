@@ -1,6 +1,6 @@
 import { defaultLocale, getMessages, type Messages } from "../core/i18n";
 import { hasActivationMarker, type BlockType, type EditableElement, type NotePlacement } from "../core/types";
-import { openInlineEditor } from "./inline";
+import { openInlineEditor, openInput } from "./inline";
 import { openMenu, type MenuAction } from "./menu";
 
 // オーバーレイ層: SVG の上に当たり判定を重ねる。
@@ -66,7 +66,8 @@ export interface OverlayCallbacks {
   onSetShape(el: EditableElement, open: string, close: string): void;
   onSetOperator(el: EditableElement, op: string): void;
   onReverse(el: EditableElement): void;
-  onAddEdgeLabel(el: EditableElement): void;
+  /** エッジラベルを設定する。text が空ならラベルを削除する (ラベル無し + 空は no-op) */
+  onSetEdgeLabel(el: EditableElement, text: string): void;
   onReconnectMessage(el: EditableElement, end: "from" | "to", actorId: string): void;
   onSetActivation(el: EditableElement, sign: string): void;
   onAddNote(placement: NotePlacement, actorIds: string[], anchorId: string | null): void;
@@ -224,6 +225,17 @@ export function drawOverlay(
   const edit = (el: EditableElement, fieldName: string, anchor: () => DOMRect) =>
     setActive(openInlineEditor(overlayEl, anchor(), hostRect(), el, fieldName, cb));
 
+  // エッジラベルの直接編集: 現在のラベル (無ければ空) を入力欄に出す。空確定で削除/付与しない。
+  // ラベル無しエッジでもメニューを経ずダブルクリックで即入力できるようにする
+  const editEdgeLabel = (el: EditableElement, anchor: () => DOMRect) =>
+    setActive(
+      openInput(overlayEl, anchor(), hostRect(), {
+        initial: el.fields.find((f) => f.name === "label")?.value ?? "",
+        multiline: true,
+        onCommit: (text) => cb.onSetEdgeLabel(el, text),
+      }),
+    );
+
   const hasLabel = (el: EditableElement) => el.fields.some((f) => f.name === "label");
   const isNode = (el: EditableElement) => el.kind === "node";
   // メッセージの送信先は、アクターの箱でも縦線 (lifeline) でも選べる
@@ -232,8 +244,10 @@ export function drawOverlay(
   const actionsFor = (el: EditableElement, anchor: () => DOMRect, hitEl: Element): MenuAction[] => {
     if (el.kind === "edge") {
       const a: MenuAction[] = [];
-      if (hasLabel(el)) a.push({ label: editLabel("label"), onSelect: () => edit(el, "label", anchor) });
-      else a.push({ label: msg.menu.addLabel, onSelect: () => cb.onAddEdgeLabel(el) });
+      a.push({
+        label: hasLabel(el) ? editLabel("label") : msg.menu.addLabel,
+        onSelect: () => editEdgeLabel(el, anchor),
+      });
       a.push({
         label: msg.menu.changeEdgeSource,
         onSelect: () =>
@@ -596,6 +610,11 @@ export function drawOverlay(
     hitEl.addEventListener("dblclick", () => {
       window.clearTimeout(clickTimer);
       if (pending) return;
+      // エッジはラベルの有無に依らずダブルクリックで即ラベル編集に入る (空確定で削除)
+      if (el.kind === "edge") {
+        editEdgeLabel(el, anchor);
+        return;
+      }
       // 表示テキストのフィールド (label / title) を直接編集する
       const f = el.fields.find((x) => x.name === "label" || x.name === "title");
       if (f) edit(el, f.name, anchor);
