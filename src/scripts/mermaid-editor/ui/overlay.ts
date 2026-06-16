@@ -70,6 +70,7 @@ export interface OverlayCallbacks {
   onReconnectMessage(el: EditableElement, end: "from" | "to", actorId: string): void;
   onSetActivation(el: EditableElement, sign: string): void;
   onAddNote(placement: NotePlacement, actorIds: string[], anchorId: string | null): void;
+  onAddNoteAtMessage(el: EditableElement, position: "above" | "below"): void;
   onSetNotePlacement(el: EditableElement, placement: NotePlacement, actorIds: string[]): void;
   onWrapBlock(from: EditableElement, to: EditableElement, type: BlockType): void;
   onUnwrapBlock(el: EditableElement): void;
@@ -358,6 +359,17 @@ export function drawOverlay(
               };
         a.push(reconnect(msg.menu.changeFrom, "from", msg.menu.sourceNoun));
         a.push(reconnect(msg.menu.changeTo, "to", msg.menu.targetNoun));
+        // このメッセージの直前 (上) / 直後 (下) に、関与アクターをまたぐノートを追加する
+        a.push({
+          label: msg.menu.addNote,
+          onSelect: () =>
+            setActive(
+              openMenu(overlayEl, anchor(), hostRect(), [
+                { label: msg.menu.addNoteAbove, onSelect: () => cb.onAddNoteAtMessage(el, "above") },
+                { label: msg.menu.addNoteBelow, onSelect: () => cb.onAddNoteAtMessage(el, "below") },
+              ]),
+            ),
+        });
       }
       addWrapInBlock(a, el, anchor, hitEl);
     }
