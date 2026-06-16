@@ -3,8 +3,11 @@ import type {
   BlockToken,
   EdgeLabelVisual,
   EdgeToken,
+  ClusterVisual,
   EdgeVisual,
   EditableElement,
+  EditableField,
+  SubgraphToken,
   MessageToken,
   NodeToken,
   NodeVisual,
@@ -12,6 +15,7 @@ import type {
   SourceRange,
   TextVisual,
 } from "./types";
+import { quoteFlowchartLabel } from "./source/flowchart";
 
 // 統合層: 視覚モデル (SVG) とソースモデル (トークン) を突き合わせる
 
@@ -91,13 +95,55 @@ export function correlateNodes(
       // label は単一範囲、id は宣言 + 全参照を置換するリネーム用フィールド
       fields: token
         ? [
-            { name: "label", value: token.label, ranges: [token.labelRange] },
+            { name: "label", value: token.label, ranges: [token.labelRange], format: quoteFlowchartLabel },
             { name: "id", value: token.id, ranges: token.idRanges },
           ]
         : [],
       removeLines: token?.removeLines,
       shapeRanges: token ? { open: token.shapeOpen, close: token.shapeClose } : undefined,
     };
+  });
+}
+
+/** SVG から subgraph のクラスタ (g.cluster) とそのラベル要素を抽出する */
+export function extractClusterVisuals(svg: SVGSVGElement): ClusterVisual[] {
+  const out: ClusterVisual[] = [];
+  for (const el of svg.querySelectorAll<SVGGElement>("g.cluster")) {
+    const labelEl = el.querySelector<SVGGraphicsElement>("g.cluster-label") ?? el;
+    out.push({ id: el.id, el, labelEl });
+  }
+  return out;
+}
+
+/**
+ * subgraph の視覚 (cluster) とソース (token) を ID で突き合わせる。
+ * cluster の SVG id は末尾が `-<subgraph id>` なので、それで対応付ける。
+ * タイトル (title フィールド) を編集でき、ノード側のメニュー「サブグラフに追加」の
+ * 候補にもなる (overlay が kind "subgraph" の要素から一覧を作る)。
+ */
+export function correlateSubgraphs(
+  visuals: readonly ClusterVisual[],
+  tokens: readonly SubgraphToken[],
+): EditableElement[] {
+  return tokens.flatMap((token) => {
+    const v = visuals.find((c) => c.id.endsWith(`-${token.id}`));
+    if (!v) return [];
+    return [
+      {
+        id: `subgraph-${token.id}`,
+        kind: "subgraph" as const,
+        el: v.labelEl,
+        refId: token.id,
+        fields: [
+          {
+            name: "title",
+            value: token.title,
+            ranges: [token.titleRange],
+            format: token.quoteTitle ? quoteFlowchartLabel : undefined,
+          },
+        ],
+      },
+    ];
   });
 }
 
@@ -165,12 +211,12 @@ export function correlateEdges(
   for (const v of visuals) {
     const token = tokenByKey.get(key(v.fromId, v.toId, v.index));
     if (!token) continue;
-    const fields = [
+    const fields: EditableField[] = [
       { name: "from", value: token.fromId, ranges: [token.fromRange] },
       { name: "to", value: token.toId, ranges: [token.toRange] },
     ];
     if (token.label) {
-      fields.unshift({ name: "label", value: token.label.value, ranges: [token.label.range] });
+      fields.unshift({ name: "label", value: token.label.value, ranges: [token.label.range], format: quoteFlowchartLabel });
     }
     result.push({
       id: `edge-${v.fromId}-${v.toId}-${v.index}`,

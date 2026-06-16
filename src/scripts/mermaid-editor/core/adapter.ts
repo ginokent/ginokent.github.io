@@ -6,10 +6,12 @@ import {
   correlateMessages,
   correlateNodes,
   correlateNotes,
+  correlateSubgraphs,
   correlateTitle,
   extractActorVisuals,
   extractBlockVisuals,
   extractBranchVisuals,
+  extractClusterVisuals,
   extractLifelines,
   extractEdgeLabelVisuals,
   extractEdgeVisuals,
@@ -18,6 +20,7 @@ import {
   extractNoteVisuals,
 } from "./correlate";
 import { tokenizeFlowchart } from "./source/flowchart";
+import { tokenizeSubgraphs } from "./source/subgraph";
 import { tokenizeSequence } from "./source/sequence";
 import { parseTitle } from "./structure";
 import type { EditableElement } from "./types";
@@ -40,6 +43,7 @@ const flowchartAdapter: DiagramAdapter = {
     const nodeIds = new Set(nodeVisuals.map((v) => v.id));
     return [
       ...titleElements(text, svg),
+      ...correlateSubgraphs(extractClusterVisuals(svg), tokenizeSubgraphs(text)),
       ...correlateNodes(nodeVisuals, t.nodes),
       ...correlateEdges(extractEdgeVisuals(svg, nodeIds), t.edges, extractEdgeLabelVisuals(svg)),
     ];

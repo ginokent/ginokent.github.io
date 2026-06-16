@@ -77,6 +77,7 @@ export interface OverlayCallbacks {
   onSetBlockType(el: EditableElement, type: BlockType): void;
   onAddBranch(el: EditableElement): void;
   onMoveLine(el: EditableElement, dir: "up" | "down"): void;
+  onAddToSubgraph(nodeId: string, subgraphId: string | null): void;
 }
 
 // 1 文 = 1 行で並び替えられる要素の種別。ブロック (複数行) や lifeline (文ではない) は除く
@@ -246,15 +247,7 @@ export function drawOverlay(
       if (el.operatorRange) {
         a.push({
           label: msg.menu.changeEdgeType,
-          onSelect: () =>
-            setActive(
-              openMenu(
-                overlayEl,
-                anchor(),
-                hostRect(),
-                EDGE_TYPES.map((t) => ({ label: msg.edgeType[t.key], onSelect: () => cb.onSetOperator(el, t.op) })),
-              ),
-            ),
+          children: EDGE_TYPES.map((t) => ({ label: msg.edgeType[t.key], onSelect: () => cb.onSetOperator(el, t.op) })),
         });
       }
       if (el.endpoints) a.push({ label: msg.menu.reverseArrow, onSelect: () => cb.onReverse(el) });
@@ -280,11 +273,9 @@ export function drawOverlay(
           startPickActor(msg.hint.pickEdgeTargetFrom(el.refId!), isNode, (to) => cb.onAddEdge(el.refId!, to), hitEl),
       });
       if (el.shapeRanges) {
-        a.push({
-          label: msg.menu.changeShape,
-          onSelect: () => setActive(openMenu(overlayEl, anchor(), hostRect(), shapeActions(el))),
-        });
+        a.push({ label: msg.menu.changeShape, children: shapeActions(el) });
       }
+      a.push({ label: msg.menu.addToSubgraph, children: subgraphActions(el.refId!) });
     }
     if (el.kind === "actor" && el.refId) {
       a.push({
@@ -301,37 +292,23 @@ export function drawOverlay(
           );
         },
       });
-      a.push({
-        label: msg.menu.addNote,
-        onSelect: () => setActive(openMenu(overlayEl, anchor(), hostRect(), noteActions(el.refId!, hitEl))),
-      });
+      a.push({ label: msg.menu.addNote, children: noteActions(el.refId!, hitEl) });
     }
     if (el.kind === "message") {
       if (el.operatorRange) {
         a.push({
           label: msg.menu.changeType,
-          onSelect: () =>
-            setActive(
-              openMenu(
-                overlayEl,
-                anchor(),
-                hostRect(),
-                MESSAGE_ARROWS.map((t) => ({ label: msg.messageArrow[t.key], onSelect: () => cb.onSetOperator(el, t.op) })),
-              ),
-            ),
+          children: MESSAGE_ARROWS.map((t) => ({ label: msg.messageArrow[t.key], onSelect: () => cb.onSetOperator(el, t.op) })),
         });
       }
       if (el.activationRange) {
         a.push({
           label: msg.menu.activation,
-          onSelect: () =>
-            setActive(
-              openMenu(overlayEl, anchor(), hostRect(), [
-                { label: msg.menu.activate, onSelect: () => cb.onSetActivation(el, "+") },
-                { label: msg.menu.deactivate, onSelect: () => cb.onSetActivation(el, "-") },
-                { label: msg.menu.clearActivation, onSelect: () => cb.onSetActivation(el, "") },
-              ]),
-            ),
+          children: [
+            { label: msg.menu.activate, onSelect: () => cb.onSetActivation(el, "+") },
+            { label: msg.menu.deactivate, onSelect: () => cb.onSetActivation(el, "-") },
+            { label: msg.menu.clearActivation, onSelect: () => cb.onSetActivation(el, "") },
+          ],
         });
       }
       if (el.endpoints) {
@@ -362,23 +339,17 @@ export function drawOverlay(
         // このメッセージの直前 (上) / 直後 (下) に、関与アクターをまたぐノートを追加する
         a.push({
           label: msg.menu.addNote,
-          onSelect: () =>
-            setActive(
-              openMenu(overlayEl, anchor(), hostRect(), [
-                { label: msg.menu.addNoteAbove, onSelect: () => cb.onAddNoteAtMessage(el, "above") },
-                { label: msg.menu.addNoteBelow, onSelect: () => cb.onAddNoteAtMessage(el, "below") },
-              ]),
-            ),
+          children: [
+            { label: msg.menu.addNoteAbove, onSelect: () => cb.onAddNoteAtMessage(el, "above") },
+            { label: msg.menu.addNoteBelow, onSelect: () => cb.onAddNoteAtMessage(el, "below") },
+          ],
         });
       }
-      addWrapInBlock(a, el, anchor, hitEl);
+      addWrapInBlock(a, el, hitEl);
     }
     if (el.kind === "block" && el.block) {
       const block = el.block;
-      a.push({
-        label: msg.menu.changeType,
-        onSelect: () => setActive(openMenu(overlayEl, anchor(), hostRect(), blockTypeActions(el))),
-      });
+      a.push({ label: msg.menu.changeType, children: blockTypeActions(el) });
       // 分岐 (else/and) の追加は alt/par のみ。分岐ラベルの編集はラベル自体 (kind "branch")
       // を直接クリックして行う (sectionTitle にアンカーするため入力欄が正しい位置に出る)
       if (block.type === "alt") a.push({ label: msg.menu.addElse, onSelect: () => cb.onAddBranch(el) });
@@ -386,11 +357,8 @@ export function drawOverlay(
       a.push({ label: msg.menu.unwrapBlock, onSelect: () => cb.onUnwrapBlock(el) });
     }
     if (el.kind === "note" && el.placementRange) {
-      a.push({
-        label: msg.menu.changePlacement,
-        onSelect: () => setActive(openMenu(overlayEl, anchor(), hostRect(), notePlacementActions(el))),
-      });
-      addWrapInBlock(a, el, anchor, hitEl);
+      a.push({ label: msg.menu.changePlacement, children: notePlacementActions(el) });
+      addWrapInBlock(a, el, hitEl);
     }
     addMove(a, el);
     addRemove(a, el);
@@ -424,6 +392,18 @@ export function drawOverlay(
       label: msg.shape[s.key],
       onSelect: () => cb.onSetShape(el, s.open, s.close),
     }));
+
+  // 「サブグラフに追加」の候補: 既存の subgraph (kind "subgraph") 一覧 + 新規作成。
+  // subgraphId=null は新規作成 (editor が採番した id でブロックを生成する)。
+  const subgraphActions = (nodeId: string): MenuAction[] => [
+    ...elements
+      .filter((e) => e.kind === "subgraph")
+      .map((sg) => ({
+        label: sg.fields.find((f) => f.name === "title")?.value || sg.refId!,
+        onSelect: () => cb.onAddToSubgraph(nodeId, sg.refId!),
+      })),
+    { label: msg.menu.newSubgraph, onSelect: () => cb.onAddToSubgraph(nodeId, null) },
+  ];
 
   // ブロック種別の変更候補。現在種別は無効表示。分岐があると opt/loop は
   // else/and を持てないため、理由を添えてグレーアウトする (非互換変更の抑止)。
@@ -497,27 +477,19 @@ export function drawOverlay(
   // 始点をこの要素とし、終端の要素 (メッセージ/ノート) をクリックで指定して囲む。
   // wrapInBlockEdits は行範囲で動くため、メッセージ・ノートいずれも (混在でも) 囲める
   const isWrappable = (e: EditableElement) => e.kind === "message" || e.kind === "note";
-  function addWrapInBlock(actions: MenuAction[], el: EditableElement, anchor: () => DOMRect, hitEl: Element): void {
+  function addWrapInBlock(actions: MenuAction[], el: EditableElement, hitEl: Element): void {
     actions.push({
       label: msg.menu.wrapInBlock,
-      onSelect: () =>
-        setActive(
-          openMenu(
-            overlayEl,
-            anchor(),
-            hostRect(),
-            BLOCK_TYPES.map((type) => ({
-              label: msg.blockType[type],
-              onSelect: () =>
-                startPickEl(
-                  msg.hint.pickWrapEnd(msg.blockType[type]),
-                  isWrappable,
-                  (to) => cb.onWrapBlock(el, to, type),
-                  hitEl,
-                ),
-            })),
+      children: BLOCK_TYPES.map((type) => ({
+        label: msg.blockType[type],
+        onSelect: () =>
+          startPickEl(
+            msg.hint.pickWrapEnd(msg.blockType[type]),
+            isWrappable,
+            (to) => cb.onWrapBlock(el, to, type),
+            hitEl,
           ),
-        ),
+      })),
     });
   }
 
@@ -549,18 +521,10 @@ export function drawOverlay(
 
   // ライフライン用: 種別を選び、始点 (このクリック高さ y1) と終点の高さの間を囲む。
   // 矢印を直接クリックしなくても、高さ (どのメッセージの上/下か) で範囲を指定できる
-  function addWrapRange(actions: MenuAction[], y1: number, anchorRect: DOMRect, source: Element): void {
+  function addWrapRange(actions: MenuAction[], y1: number, source: Element): void {
     actions.push({
       label: msg.menu.wrapInBlock,
-      onSelect: () =>
-        setActive(
-          openMenu(
-            overlayEl,
-            anchorRect,
-            hostRect(),
-            BLOCK_TYPES.map((type) => ({ label: msg.blockType[type], onSelect: () => startWrapEnd(y1, type, source) })),
-          ),
-        ),
+      children: BLOCK_TYPES.map((type) => ({ label: msg.blockType[type], onSelect: () => startWrapEnd(y1, type, source) })),
     });
   }
 
@@ -673,13 +637,10 @@ export function drawOverlay(
         const at = pointRect(clientX, clientY);
         const menu: MenuAction[] = [
           { label: msg.menu.addMessage, onSelect: () => startLifelineMessage(clientY) },
-          {
-            label: msg.menu.addNote,
-            onSelect: () => setActive(openMenu(overlayEl, at, hostRect(), lifelineNoteActions(from, anchorId, band))),
-          },
+          { label: msg.menu.addNote, children: lifelineNoteActions(from, anchorId, band) },
         ];
         // ブロックで囲む: このクリック高さを始点に、終点の高さをもう一度クリックして範囲を囲む
-        addWrapRange(menu, clientY, at, band);
+        addWrapRange(menu, clientY, band);
         setActive(openMenu(overlayEl, at, hostRect(), menu));
       };
       band.addEventListener("click", (e) => {
