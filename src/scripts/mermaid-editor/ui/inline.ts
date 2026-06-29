@@ -14,19 +14,20 @@ export interface EditCallbacks {
 
 const BR_RE = /<br\s*\/?>/giu; // <br> / <br/> / <br /> いずれも対象
 
-/** 要素の指定フィールドをインライン編集する。閉じる関数を返す */
-export function openInlineEditor(
-  host: HTMLElement,
-  anchor: DOMRect,
-  hostRect: DOMRect,
-  el: EditableElement,
-  fieldName: string,
-  cb: EditCallbacks,
-): () => void {
-  const field = el.fields.find((f) => f.name === fieldName);
-  if (!field) return () => {};
+/** 入力欄の生成オプション (フィールド非依存の低レベル API) */
+export interface InputOptions {
+  initial: string; // 初期値 (multiline のとき <br/> を含み得る)
+  multiline: boolean; // true でラベル相当 (改行可・<br/> 変換あり)
+  onCommit: (value: string) => void; // 表示が変わったときだけ呼ぶ (multiline は <br/> 形へ戻した値)
+}
 
-  const multiline = fieldName === "label"; // ラベルだけ改行可。id 等は単一行
+/**
+ * host 上に入力欄を重ね、確定で onCommit を呼ぶ低レベル API。閉じる関数を返す。
+ * 表示が変わらなければ onCommit は呼ばない (no-op)。エッジラベルの新規入力など、
+ * 既存フィールドが無いケースでも使える (空確定 = onCommit("") で削除を表現できる)。
+ */
+export function openInput(host: HTMLElement, anchor: DOMRect, hostRect: DOMRect, opts: InputOptions): () => void {
+  const { initial, multiline, onCommit } = opts;
   const input = document.createElement(multiline ? "textarea" : "input") as HTMLTextAreaElement | HTMLInputElement;
   input.className = "inline-input";
   input.style.left = `${anchor.left - hostRect.left}px`;
@@ -36,7 +37,7 @@ export function openInlineEditor(
   // 表示は <br/> を実改行に、書き戻しは実改行を <br/> に変換する
   const toDisplay = (v: string) => (multiline ? v.replace(BR_RE, "\n") : v);
   const toSource = (v: string) => (multiline ? v.replace(/\r?\n/gu, "<br/>") : v);
-  input.value = toDisplay(field.value);
+  input.value = toDisplay(initial);
 
   // textarea は内容に合わせて高さを伸ばす (input は要素の高さに合わせる)
   const autoGrow = () => {
@@ -58,7 +59,7 @@ export function openInlineEditor(
     done = true;
     input.remove();
     // 表示テキストが変わったときだけ書き戻す (<br> 形の差異だけでは書き換えない)
-    if (raw !== toDisplay(field.value)) cb.onApply(el, { [fieldName]: toSource(raw) });
+    if (raw !== toDisplay(initial)) onCommit(toSource(raw));
   };
 
   input.addEventListener("keydown", (ev: Event) => {
@@ -81,4 +82,22 @@ export function openInlineEditor(
   input.select();
   if (multiline) autoGrow();
   return close;
+}
+
+/** 要素の指定フィールドをインライン編集する。閉じる関数を返す */
+export function openInlineEditor(
+  host: HTMLElement,
+  anchor: DOMRect,
+  hostRect: DOMRect,
+  el: EditableElement,
+  fieldName: string,
+  cb: EditCallbacks,
+): () => void {
+  const field = el.fields.find((f) => f.name === fieldName);
+  if (!field) return () => {};
+  return openInput(host, anchor, hostRect, {
+    initial: field.value,
+    multiline: fieldName === "label", // ラベルだけ改行可。id 等は単一行
+    onCommit: (value) => cb.onApply(el, { [fieldName]: value }),
+  });
 }

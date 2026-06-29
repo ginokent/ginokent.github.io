@@ -372,8 +372,10 @@ const m = getMessages(locale).chrome;
   }
 
   .mermaid-editor .pick-hint {
-    position: absolute;
-    top: 6px;
+    /* 選択モード中の状態表示。縦長の図でスクロールしても常に見えるようビューポート固定にする
+       (下部を操作中にヒントが見切れてモードが分からないのを防ぐ) */
+    position: fixed;
+    top: 12px;
     left: 50%;
     transform: translateX(-50%);
     pointer-events: none;
@@ -383,7 +385,8 @@ const m = getMessages(locale).chrome;
     padding: 0.25rem 0.7rem;
     border-radius: 999px;
     white-space: nowrap;
-    z-index: 30;
+    z-index: 40;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
   }
 
   /* コンテキストメニュー */

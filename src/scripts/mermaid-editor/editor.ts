@@ -6,7 +6,7 @@ import { copyText, exportPng, exportSvg } from "./core/export";
 import { save } from "./core/persist";
 import { parseError, renderInto, validate } from "./core/render";
 import { tokenizeSequence } from "./core/source/sequence";
-import { flowchartDeclInsertEdit } from "./core/source/flowchart";
+import { flowchartDeclInsertEdit, quoteFlowchartLabel } from "./core/source/flowchart";
 import { createSubgraphBlockEdit, subgraphAddNodeEdit, tokenizeSubgraphs } from "./core/source/subgraph";
 import { formatSource } from "./core/format";
 import {
@@ -129,10 +129,10 @@ export class Editor {
     exportSvg(this.dom.diagram);
   }
 
-  /** PNG を書き出す */
+  /** PNG を書き出す (htmlLabels 無効で再描画し foreignObject 無し SVG をラスタライズする) */
   async savePng(): Promise<void> {
     try {
-      await exportPng(this.dom.diagram);
+      await exportPng(this.dom.source.value);
     } catch {
       console.warn("png export failed");
     }
@@ -230,7 +230,7 @@ export class Editor {
       onSetShape: (el, open, close) => void this.setShape(el, open, close),
       onSetOperator: (el, op) => void this.setOperator(el, op),
       onReverse: (el) => void this.reverse(el),
-      onAddEdgeLabel: (el) => void this.addEdgeLabel(el),
+      onSetEdgeLabel: (el, text) => void this.setEdgeLabel(el, text),
       onReconnectMessage: (el, end, actorId) => void this.reconnectMessage(el, end, actorId),
       onSetActivation: (el, sign) => void this.setActivation(el, sign),
       onMoveLine: (el, dir) => void this.moveLine(el, dir),
@@ -460,11 +460,27 @@ export class Editor {
     ]);
   }
 
-  /** ラベルの無いエッジにラベルを追加する (演算子直後に |ラベル| を挿入する) */
-  async addEdgeLabel(el: EditableElement): Promise<void> {
-    if (!el.operatorRange) return;
-    const at = el.operatorRange.end; // 例: A --> B → A -->|ラベル| B
-    await this.commitEdits([{ range: { start: at, end: at }, newText: "|ラベル|" }]);
+  /**
+   * エッジラベルを設定する。
+   * - text が非空: 既存ラベルは中身を置換、無ければ演算子直後へ `|text|` を挿入する
+   * - text が空: 既存ラベルは `|...|` ごと削除、ラベルが無ければ何もしない
+   * (ラベル無しエッジのダブルクリックで即入力 → 空確定で付与しない、を実現する)
+   */
+  async setEdgeLabel(el: EditableElement, text: string): Promise<void> {
+    const labelField = el.fields.find((f) => f.name === "label");
+    const empty = text.trim() === "";
+    if (labelField) {
+      const r = labelField.ranges[0];
+      // 空なら区切り | を含めて削除 (labelRange は | の内側なので前後 1 文字ずつ広げる)
+      const edit = empty
+        ? { range: { start: r.start - 1, end: r.end + 1 }, newText: "" }
+        : { range: r, newText: quoteFlowchartLabel(text) };
+      await this.commitEdits([edit]);
+      return;
+    }
+    if (empty || !el.operatorRange) return; // ラベル無し + 空 = 付与しない
+    const at = el.operatorRange.end; // 例: A --> B → A -->|text| B
+    await this.commitEdits([{ range: { start: at, end: at }, newText: `|${quoteFlowchartLabel(text)}|` }]);
   }
 
   /** メッセージの起動/終了 ([+-]?) を切り替える (sign は "+"/"-"/"") */
