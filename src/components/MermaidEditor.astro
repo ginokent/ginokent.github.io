@@ -372,11 +372,10 @@ const m = getMessages(locale).chrome;
   }
 
   .mermaid-editor .pick-hint {
-    /* 選択モード中の状態表示。縦長の図でスクロールしても常に見えるようビューポート下端中央に
-       固定する。上端固定だとサイトの sticky ヘッダ (z-index:100) に覆われて見えなくなるため下端へ */
+    /* 選択モード中の状態表示。位置は overlay.ts の positionHint がライブ計算する
+       ((画面ビューポート ∩ SVG 描画領域) の中央上部)。JS が top / left をインラインで設定し、
+       transform で自分の幅の半分だけ左へずらして中央合わせする */
     position: fixed;
-    bottom: 16px;
-    left: 50%;
     transform: translateX(-50%);
     pointer-events: none;
     background: #16a34a;

@@ -156,6 +156,31 @@ export function drawOverlay(
     window.clearTimeout(outsideTimer);
     document.removeEventListener("keydown", onPickKey);
     document.removeEventListener("click", onOutsideClick);
+    // hint のライブ追従を解除する。capture:true で登録したので同じフラグで解除する
+    window.removeEventListener("scroll", positionHint, true);
+    window.removeEventListener("resize", positionHint);
+  }
+  // ヒントを (viewport ∩ svg) の「中央上部」に配置する。
+  //   - 縦: max(viewport 上端, svg 上端) + 少しの余白 (svg が画面内に見えていれば svg の上端に貼る。
+  //         svg 上端が画面より上へスクロールされたら画面上端 = 実際に見えている領域の上端)
+  //   - 横: 共通部分の水平中央 ((max(左) + min(右)) / 2)
+  //   - svg が無い / 交差しない場合は画面上端中央にフォールバック
+  // sticky ヘッダは svg より上端側にあるため、svg の頂点に貼る限りヘッダには被らない
+  function positionHint(): void {
+    if (!hint) return;
+    const vw = window.innerWidth;
+    const r = svg?.getBoundingClientRect();
+    const pad = 8;
+    if (!r || r.right <= 0 || r.left >= vw || r.bottom <= 0 || r.top >= window.innerHeight) {
+      hint.style.top = `${pad}px`;
+      hint.style.left = `${vw / 2}px`;
+      return;
+    }
+    const top = Math.max(0, r.top);
+    const left = Math.max(0, r.left);
+    const right = Math.min(vw, r.right);
+    hint.style.top = `${top + pad}px`;
+    hint.style.left = `${(left + right) / 2}px`;
   }
   // mark は起点の画面座標 (viewport)。あれば「ここから矢印が伸びる」目印を overlay に置く
   function beginPending(p: Pending, hintText: string, source?: Element, mark?: { x: number; y: number }): void {
@@ -169,6 +194,7 @@ export function drawOverlay(
     hint.className = "pick-hint";
     hint.textContent = hintText;
     overlayEl.append(hint);
+    positionHint();
     if (mark) {
       startMark = document.createElement("div");
       startMark.className = "pick-start";
@@ -183,6 +209,9 @@ export function drawOverlay(
     document.addEventListener("keydown", onPickKey);
     // 開始のクリック自身を拾わないよう、枠外クリック検知は次のティックで登録する
     outsideTimer = window.setTimeout(() => document.addEventListener("click", onOutsideClick), 0);
+    // スクロール / リサイズで svg 矩形が変わるのに追従する (scroll はバブルしないので capture で拾う)
+    window.addEventListener("scroll", positionHint, { capture: true, passive: true });
+    window.addEventListener("resize", positionHint);
   }
   const startPickActor = (
     hintText: string,
