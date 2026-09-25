@@ -1,5 +1,7 @@
 import {
   correlateActors,
+  correlateArchEdges,
+  correlateArchNodes,
   correlateBlocks,
   correlateBranches,
   correlateEdges,
@@ -9,6 +11,10 @@ import {
   correlateSubgraphs,
   correlateTitle,
   extractActorVisuals,
+  extractArchEdgeVisuals,
+  extractArchGroupVisuals,
+  extractArchJunctionVisuals,
+  extractArchServiceVisuals,
   extractBlockVisuals,
   extractBranchVisuals,
   extractClusterVisuals,
@@ -19,6 +25,7 @@ import {
   extractNodeVisuals,
   extractNoteVisuals,
 } from "./correlate";
+import { tokenizeArchitecture } from "./source/architecture";
 import { tokenizeFlowchart } from "./source/flowchart";
 import { tokenizeSubgraphs } from "./source/subgraph";
 import { tokenizeSequence } from "./source/sequence";
@@ -66,6 +73,25 @@ const sequenceAdapter: DiagramAdapter = {
   },
 };
 
+const architectureAdapter: DiagramAdapter = {
+  build(text, svg) {
+    const t = tokenizeArchitecture(text);
+    const services = extractArchServiceVisuals(svg);
+    const groups = extractArchGroupVisuals(svg);
+    const junctions = extractArchJunctionVisuals(svg);
+    const nodeIds = new Set([...services, ...junctions].map((v) => v.id));
+    return [
+      ...titleElements(text, svg),
+      // group を先に置き、当たり判定を service / junction / edge の下に敷く。
+      // group のヒットはラベル箱に絞ってあるため、中の要素と重ならない
+      ...correlateArchNodes(groups, t.nodes),
+      ...correlateArchNodes(services, t.nodes),
+      ...correlateArchNodes(junctions, t.nodes),
+      ...correlateArchEdges(extractArchEdgeVisuals(svg, nodeIds), t.edges),
+    ];
+  },
+};
+
 /** 先頭の図種キーワードからアダプタを選ぶ。未対応図種は null */
 export function pickAdapter(text: string): DiagramAdapter | null {
   switch (firstKeyword(text)) {
@@ -74,6 +100,8 @@ export function pickAdapter(text: string): DiagramAdapter | null {
     case "flowchart":
     case "graph":
       return flowchartAdapter;
+    case "architecture-beta":
+      return architectureAdapter;
     default:
       return null;
   }
@@ -93,7 +121,8 @@ export function firstKeyword(text: string): string | null {
   for (; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line || line.startsWith("%%")) continue;
-    return line.match(/^[A-Za-z]+/)?.[0] ?? null;
+    // ハイフンも含めて図種キーワードとして扱う (例: architecture-beta)
+    return line.match(/^[A-Za-z][A-Za-z-]*/)?.[0] ?? null;
   }
   return null;
 }
