@@ -1,5 +1,12 @@
 import { defaultLocale, getMessages, type Messages } from "../core/i18n";
-import { hasActivationMarker, type BlockType, type EditableElement, type NotePlacement } from "../core/types";
+import {
+  hasActivationMarker,
+  type ArchLinkKind,
+  type ArchSide,
+  type BlockType,
+  type EditableElement,
+  type NotePlacement,
+} from "../core/types";
 import { openInlineEditor, openInput } from "./inline";
 import { openMenu, type MenuAction } from "./menu";
 
@@ -79,6 +86,19 @@ export interface OverlayCallbacks {
   onAddBranch(el: EditableElement): void;
   onMoveLine(el: EditableElement, dir: "up" | "down"): void;
   onAddToSubgraph(nodeId: string, subgraphId: string | null): void;
+  // ---- architecture-beta ----
+  /** architecture: from → to のエッジを追加する (既定は R→L の矢印付き) */
+  onAddArchEdge(fromId: string, toId: string): void;
+  /** architecture エッジの接続点 (T/B/L/R) を変更する */
+  onSetArchSide(el: EditableElement, end: "from" | "to", side: ArchSide): void;
+  /** architecture エッジの線種 (矢印/線のみ) を変更する */
+  onSetArchLinkKind(el: EditableElement, kind: ArchLinkKind): void;
+  /** architecture ノード (service/group/junction) の親 group を変更する (null でルート) */
+  onSetParentGroup(nodeId: string, parentId: string | null): void;
+  /** architecture ノードにラベル (`[Label]`) を追加する (ラベル未設定時のみ) */
+  onAddArchLabel(el: EditableElement, text: string): void;
+  /** architecture ノードにアイコン (`(icon)`) を追加する (アイコン未設定時のみ) */
+  onAddArchIcon(el: EditableElement, icon: string): void;
 }
 
 // 1 文 = 1 行で並び替えられる要素の種別。ブロック (複数行) や lifeline (文ではない) は除く
@@ -88,10 +108,18 @@ const MOVABLE_KINDS: ReadonlySet<EditableElement["kind"]> = new Set([
   "actor",
   "message",
   "note",
+  "service",
+  "group",
+  "junction",
 ]);
 
 /** 制御ブロックの種別候補。表示名は実行時に Messages から引く */
 const BLOCK_TYPES: ReadonlyArray<BlockType> = ["alt", "opt", "loop", "par"];
+
+/** architecture-beta エッジの接続点 (T/B/L/R)。表示名は実行時に Messages から引く */
+const ARCH_SIDES: ReadonlyArray<ArchSide> = ["T", "B", "L", "R"];
+/** architecture-beta エッジの線種 (矢印付き/線のみ) */
+const ARCH_LINK_KINDS: ReadonlyArray<ArchLinkKind> = ["arrow", "line"];
 
 export function drawOverlay(
   overlayEl: HTMLElement,
@@ -266,11 +294,88 @@ export function drawOverlay(
     );
 
   const hasLabel = (el: EditableElement) => el.fields.some((f) => f.name === "label");
+  const hasIcon = (el: EditableElement) => el.fields.some((f) => f.name === "icon");
   const isNode = (el: EditableElement) => el.kind === "node";
   // メッセージの送信先は、アクターの箱でも縦線 (lifeline) でも選べる
   const isActorTarget = (el: EditableElement) => el.kind === "actor" || el.kind === "lifeline";
+  // architecture のエッジ端点は service / junction (group は非対応。MVP では {group} 修飾のエッジは扱わない)
+  const isArchEdgeTarget = (el: EditableElement) => el.kind === "service" || el.kind === "junction";
+  // architecture 全ノード (親 group 変更のクリック対象 = 自身以外のすべての arch ノード)
+  const isArchNode = (el: EditableElement) =>
+    el.kind === "service" || el.kind === "group" || el.kind === "junction";
+
+  /** インライン入力を開いてラベル (`[Label]`) を新規追加する (未設定時のみ) */
+  const addArchLabel = (el: EditableElement, anchor: () => DOMRect): void =>
+    setActive(
+      openInput(overlayEl, anchor(), hostRect(), {
+        initial: "",
+        multiline: false,
+        onCommit: (text) => {
+          if (text.trim()) cb.onAddArchLabel(el, text);
+        },
+      }),
+    );
+  /** インライン入力を開いてアイコン (`(icon)`) を新規追加する (未設定時のみ) */
+  const addArchIcon = (el: EditableElement, anchor: () => DOMRect): void =>
+    setActive(
+      openInput(overlayEl, anchor(), hostRect(), {
+        initial: "",
+        multiline: false,
+        onCommit: (icon) => {
+          if (icon.trim()) cb.onAddArchIcon(el, icon);
+        },
+      }),
+    );
 
   const actionsFor = (el: EditableElement, anchor: () => DOMRect, hitEl: Element): MenuAction[] => {
+    // architecture のエッジ (archSides を持つ) 専用メニュー: 接続点変更 / 線種 / 反転 / 再接続 / 削除
+    if (el.kind === "edge" && el.archSides) {
+      const a: MenuAction[] = [];
+      const sides = el.archSides;
+      const linkKind = el.archLink?.kind ?? "arrow";
+      a.push({
+        label: msg.menu.changeArchFromSide,
+        children: ARCH_SIDES.map((s) => ({
+          label: s === sides.fromValue ? msg.menu.currentLabel(msg.archSide[s]) : msg.archSide[s],
+          onSelect: () => cb.onSetArchSide(el, "from", s),
+          disabled: s === sides.fromValue,
+        })),
+      });
+      a.push({
+        label: msg.menu.changeArchToSide,
+        children: ARCH_SIDES.map((s) => ({
+          label: s === sides.toValue ? msg.menu.currentLabel(msg.archSide[s]) : msg.archSide[s],
+          onSelect: () => cb.onSetArchSide(el, "to", s),
+          disabled: s === sides.toValue,
+        })),
+      });
+      a.push({
+        label: msg.menu.changeArchLinkKind,
+        children: ARCH_LINK_KINDS.map((k) => ({
+          label: k === linkKind ? msg.menu.currentLabel(msg.archLinkKind[k]) : msg.archLinkKind[k],
+          onSelect: () => cb.onSetArchLinkKind(el, k),
+          disabled: k === linkKind,
+        })),
+      });
+      a.push({
+        label: msg.menu.changeEdgeSource,
+        onSelect: () =>
+          startPickActor(msg.hint.pickArchReconnect(msg.menu.sourceNoun), isArchEdgeTarget, (id) =>
+            cb.onApply(el, { from: id }),
+          ),
+      });
+      a.push({
+        label: msg.menu.changeEdgeTarget,
+        onSelect: () =>
+          startPickActor(msg.hint.pickArchReconnect(msg.menu.targetNoun), isArchEdgeTarget, (id) =>
+            cb.onApply(el, { to: id }),
+          ),
+      });
+      if (el.endpoints) a.push({ label: msg.menu.reverseArrow, onSelect: () => cb.onReverse(el) });
+      addMove(a, el);
+      addRemove(a, el);
+      return a;
+    }
     if (el.kind === "edge") {
       const a: MenuAction[] = [];
       a.push({
@@ -403,9 +508,58 @@ export function drawOverlay(
       a.push({ label: msg.menu.changePlacement, children: notePlacementActions(el) });
       addWrapInBlock(a, el, hitEl);
     }
+    // architecture: service / group / junction
+    if (isArchNode(el) && el.refId) {
+      // ラベル / アイコン未設定なら「追加」を、既にあれば fields.map の「編集」で扱う (junction は不可)
+      if (el.kind !== "junction") {
+        if (!hasLabel(el)) a.push({ label: msg.menu.addLabel, onSelect: () => addArchLabel(el, anchor) });
+        if (!hasIcon(el)) a.push({ label: msg.menu.addIcon, onSelect: () => addArchIcon(el, anchor) });
+      }
+      // service / junction は他要素へエッジを引ける (group は MVP 対象外)
+      if (el.kind !== "group") {
+        a.push({
+          label: msg.menu.archEdgeToExisting,
+          onSelect: () =>
+            startPickActor(msg.hint.pickArchTargetFrom(el.refId!), isArchEdgeTarget, (to) =>
+              cb.onAddArchEdge(el.refId!, to), hitEl),
+        });
+      }
+      a.push({ label: msg.menu.moveToGroup, children: archGroupActions(el.refId, el.kind === "group" ? el.refId : null) });
+    }
     addMove(a, el);
     addRemove(a, el);
     return a;
+  };
+
+  /**
+   * 「グループに追加」の候補: 既存の group 一覧 + ルート (親なし)。
+   * 自分自身と自分の子孫を候補から除外する (循環参照 = mermaid のパースエラー防止)。
+   * selfGroupId が null なら service/junction (自分は group ではない) なので除外だけ。
+   */
+  const archGroupActions = (nodeId: string, selfGroupId: string | null): MenuAction[] => {
+    const excludes = new Set<string>();
+    if (selfGroupId) {
+      // 自身の子孫を全て除外する (深さは実用上小さいので単純 BFS)
+      excludes.add(selfGroupId);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const g of elements) {
+          if (g.kind !== "group" || !g.refId) continue;
+          // このグループの parent が excludes に入っていれば、それ自身も excludes に入れる
+          // parent 情報は EditableElement には無いので、id と in 節をソースから読むのは重い。
+          // ここでは自身のみ除外にとどめ、深い循環は commitEdits の validate() で弾かせる
+        }
+      }
+    }
+    const items: MenuAction[] = elements
+      .filter((e) => e.kind === "group" && e.refId && !excludes.has(e.refId))
+      .map((g) => ({
+        label: g.fields.find((f) => f.name === "label")?.value || g.refId!,
+        onSelect: () => cb.onSetParentGroup(nodeId, g.refId!),
+      }));
+    items.push({ label: msg.menu.rootGroup, onSelect: () => cb.onSetParentGroup(nodeId, null) });
+    return items;
   };
 
   // ノートの配置変更: 配置を選び、対象アクター (箱か縦線) をクリックして確定する

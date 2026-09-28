@@ -164,7 +164,20 @@ export interface TextVisual {
 /** 3 モデルを突き合わせた編集可能要素 */
 export interface EditableElement {
   id: string;
-  kind: "node" | "edge" | "actor" | "message" | "note" | "block" | "branch" | "lifeline" | "title" | "subgraph";
+  kind:
+    | "node"
+    | "edge"
+    | "actor"
+    | "message"
+    | "note"
+    | "block"
+    | "branch"
+    | "lifeline"
+    | "title"
+    | "subgraph"
+    | "service"
+    | "group"
+    | "junction";
   el: SVGGraphicsElement; // 視覚モデル由来 (g / text いずれも可)
   fields: EditableField[]; // ソースモデル由来 (空なら編集不可)
   refId?: string; // ソース上の論理参照 ID (ノード ID / アクター ID)。接続/追加用
@@ -182,6 +195,86 @@ export interface EditableElement {
     headerStart: number; // ヘッダ行の開始オフセット (操作時に再トークン化して対象を特定する)
     branches: { keyword: "else" | "and"; label: string }[]; // 分岐 (種別変更の活性判定・分岐追加の文言用)
   };
+  archSides?: {
+    // architecture エッジの接続点 (T/B/L/R) 変更用。エッジのみ持つ (kind === "edge" かつ archSides 有りで判定)
+    fromValue: ArchSide;
+    toValue: ArchSide;
+    fromRange: SourceRange; // from 側の side 文字 (1 文字) の範囲
+    toRange: SourceRange; // to 側の side 文字 (1 文字) の範囲
+  };
+  archLink?: {
+    // architecture エッジの線種 (矢印付き/線のみ) 変更用
+    kind: ArchLinkKind;
+  };
+}
+
+// ---- アーキテクチャ図 (architecture-beta) ----
+
+/** architecture-beta の要素種別 */
+export type ArchNodeKind = "service" | "group" | "junction";
+
+/** エッジの接続点 (Top / Bottom / Left / Right) */
+export type ArchSide = "T" | "B" | "L" | "R";
+
+/** architecture エッジの線種: 矢印付き (-->) / 線のみ (--) */
+export type ArchLinkKind = "arrow" | "line";
+
+/**
+ * ソースモデル: service / group / junction の宣言の位置情報。
+ * 1 行に収まる (`service <id> [(<icon>)] [[<label>]] [in <parent>]`)。
+ * ラベル / アイコン / 親 group は省略可能。
+ */
+export interface ArchNodeToken {
+  id: string;
+  kind: ArchNodeKind;
+  label: string; // [Label] の中身 (無ければ空)。junction は常に空
+  labelRange: SourceRange | null; // [ 〜 ] の内側の範囲 (無ければ null)
+  labelBracketRange: SourceRange | null; // [Label] 全体の範囲 (追加/削除で用いる)
+  icon: string; // (icon) の中身 (無ければ空)。junction は常に空
+  iconRange: SourceRange | null; // ( 〜 ) の内側の範囲 (無ければ null)
+  iconParenRange: SourceRange | null; // (icon) 全体の範囲 (追加/削除で用いる)
+  parent: string | null; // in <parent> の <parent> (無ければ null)
+  parentRange: SourceRange | null; // <parent> の範囲 (無ければ null)
+  inClauseRange: SourceRange | null; // " in <parent>" 全体 (先頭空白含む) の範囲 (無ければ null)
+  afterIdEnd: number; // id 直後の位置 (icon/label/in 全て無いときの label 追加位置に用いる)
+  idRanges: SourceRange[]; // id が現れる全範囲 (宣言 + エッジ + in 参照)。リネーム用
+  declLineRange: SourceRange; // 宣言行 (行末改行を含まず) の範囲 (削除用)
+  removeLines: SourceRange[]; // カスケード削除で消す行 (自宣言 + 参照エッジ行)。in 参照の削除は別途行う
+}
+
+/**
+ * ソースモデル: architecture エッジ (<from>:<side> <op> <side>:<to>) の位置情報。
+ * 文法にエッジラベルは無い。線種 (--> / --) と接続点 (T/B/L/R) を編集可能。
+ */
+export interface ArchEdgeToken {
+  fromId: string;
+  fromRange: SourceRange; // from id の範囲 (再接続用)
+  fromSide: ArchSide;
+  fromSideRange: SourceRange; // from 側 side 文字の範囲 (接続点変更用)
+  toId: string;
+  toRange: SourceRange; // to id の範囲 (再接続用)
+  toSide: ArchSide;
+  toSideRange: SourceRange; // to 側 side 文字の範囲
+  linkKind: ArchLinkKind;
+  linkRange: SourceRange; // 演算子 (--> または --) の範囲 (線種変更用)
+  index: number; // 同一 from→to 内の通し番号 (SVG L_from_to_index との対応。architecture では単発が普通)
+  statementRange: SourceRange; // エッジ行の範囲 (削除用)
+}
+
+/** 視覚モデル: architecture 要素 (service / group / junction) の SVG */
+export interface ArchNodeVisual {
+  id: string;
+  kind: ArchNodeKind;
+  el: SVGGraphicsElement; // ヒット領域用 (service: g.architecture-service, group: label g, junction: rect)
+  labelEl?: SVGGraphicsElement; // ラベル text 要素 (無ければ undefined)
+}
+
+/** 視覚モデル: architecture エッジパス (path.edge) */
+export interface ArchEdgeVisual {
+  fromId: string;
+  toId: string;
+  index: number;
+  el: SVGGraphicsElement;
 }
 
 /**

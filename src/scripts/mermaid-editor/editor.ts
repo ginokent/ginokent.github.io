@@ -7,6 +7,14 @@ import { save } from "./core/persist";
 import { parseError, renderInto, validate } from "./core/render";
 import { tokenizeSequence } from "./core/source/sequence";
 import { flowchartDeclInsertEdit, quoteFlowchartLabel } from "./core/source/flowchart";
+import {
+  archAddIconEdit,
+  archAddLabelEdit,
+  archDeclInsertEdit,
+  archRemoveGroupEdits,
+  archSetParentEdits,
+  tokenizeArchitecture,
+} from "./core/source/architecture";
 import { createSubgraphBlockEdit, subgraphAddNodeEdit, tokenizeSubgraphs } from "./core/source/subgraph";
 import { formatSource } from "./core/format";
 import {
@@ -22,7 +30,16 @@ import {
   toggleAutonumberEdits,
 } from "./core/structure";
 import { addBranchEdits, setBlockTypeEdits, unwrapBlockEdits, wrapInBlockEdits } from "./core/source/block";
-import { hasActivationMarker, type BlockType, type EditableElement, type NotePlacement, type SourceRange, type TextEdit } from "./core/types";
+import {
+  hasActivationMarker,
+  type ArchLinkKind,
+  type ArchSide,
+  type BlockType,
+  type EditableElement,
+  type NotePlacement,
+  type SourceRange,
+  type TextEdit,
+} from "./core/types";
 import { drawOverlay, type OverlayCallbacks } from "./ui/overlay";
 
 // オーケストレータ: テキスト (正本) を中心に 3 モデルを再構築し、
@@ -193,10 +210,11 @@ export class Editor {
   }
 
   /** 現在の図種 (ツールバーの図種別ボタン表示に使う)。未対応図種は null */
-  diagramType(): "flowchart" | "sequence" | null {
+  diagramType(): "flowchart" | "sequence" | "architecture" | null {
     const kw = firstKeyword(this.dom.source.value);
     if (kw === "flowchart" || kw === "graph") return "flowchart";
     if (kw === "sequenceDiagram") return "sequence";
+    if (kw === "architecture-beta") return "architecture";
     return null;
   }
 
@@ -241,19 +259,32 @@ export class Editor {
       onAddNote: (placement, actorIds, anchor) => void this.addNote(placement, actorIds, anchor),
       onAddNoteAtMessage: (el, position) => void this.addNoteAtMessage(el, position),
       onSetNotePlacement: (el, placement, actorIds) => void this.setNotePlacement(el, placement, actorIds),
+      onAddArchEdge: (from, to) => void this.addArchEdge(from, to),
+      onSetArchSide: (el, end, side) => void this.setArchSide(el, end, side),
+      onSetArchLinkKind: (el, kind) => void this.setArchLinkKind(el, kind),
+      onSetParentGroup: (nodeId, parentId) => void this.setParentGroup(nodeId, parentId),
+      onAddArchLabel: (el, text) => void this.addArchLabel(el, text),
+      onAddArchIcon: (el, icon) => void this.addArchIcon(el, icon),
     };
   }
 
   /** 要素を削除する (ノードは接続エッジも巻き込むカスケード削除) */
   private async remove(el: EditableElement): Promise<void> {
+    // architecture の group は「子要素の in 句も併せて外す」特別カスケードが必要。
+    // (残ると mermaid が in の親を見つけられずパースエラーになる)
+    if (el.kind === "group" && el.refId && this.isArchitecture()) {
+      await this.commitEdits(archRemoveGroupEdits(this.dom.source.value, el.refId));
+      return;
+    }
     if (!el.removeLines || el.removeLines.length === 0) return;
     await this.commitEdits(deleteLines(this.dom.source.value, el.removeLines));
   }
 
-  /** ツールバーの追加: 図種に応じて主要素 (ノード / 参加者) を追加する */
+  /** ツールバーの追加: 図種に応じて主要素 (ノード / 参加者 / サービス) を追加する */
   async addElement(): Promise<void> {
     if (this.isFlowchart()) await this.addNode();
     else if (this.isSequence()) await this.addParticipant();
+    else if (this.isArchitecture()) await this.addService();
   }
 
   /**
@@ -545,6 +576,86 @@ export class Editor {
 
   private isSequence(): boolean {
     return firstKeyword(this.dom.source.value) === "sequenceDiagram";
+  }
+
+  private isArchitecture(): boolean {
+    return firstKeyword(this.dom.source.value) === "architecture-beta";
+  }
+
+  // ---- architecture-beta 操作 ----
+
+  /** 新規サービスを追加する (宣言ブロックの末尾へ挿入) */
+  private async addService(): Promise<void> {
+    const ids = tokenizeArchitecture(this.dom.source.value).nodes.map((n) => n.id);
+    const id = freshNodeId(ids, "s");
+    const n = id.slice(1);
+    await this.commitEdits([archDeclInsertEdit(this.dom.source.value, `service ${id}[新規サービス${n}]`)]);
+  }
+
+  /** 新規グループを追加する */
+  async addGroup(): Promise<void> {
+    if (!this.isArchitecture()) return;
+    const ids = tokenizeArchitecture(this.dom.source.value).nodes.map((n) => n.id);
+    const id = freshNodeId(ids, "g");
+    const n = id.slice(1);
+    await this.commitEdits([archDeclInsertEdit(this.dom.source.value, `group ${id}[新規グループ${n}]`)]);
+  }
+
+  /** 新規ジャンクションを追加する (ラベル・アイコン無し) */
+  async addJunction(): Promise<void> {
+    if (!this.isArchitecture()) return;
+    const ids = tokenizeArchitecture(this.dom.source.value).nodes.map((n) => n.id);
+    const id = freshNodeId(ids, "j");
+    await this.commitEdits([archDeclInsertEdit(this.dom.source.value, `junction ${id}`)]);
+  }
+
+  /** from から to へ architecture のエッジを追加する (既定は R→L の矢印付き) */
+  async addArchEdge(fromId: string, toId: string): Promise<void> {
+    if (!this.isArchitecture()) return;
+    await this.commitEdits([appendStatement(this.dom.source.value, `${fromId}:R --> L:${toId}`)]);
+  }
+
+  /** architecture エッジの接続点 (T/B/L/R) を変更する */
+  async setArchSide(el: EditableElement, end: "from" | "to", side: ArchSide): Promise<void> {
+    if (!el.archSides) return;
+    const range = end === "from" ? el.archSides.fromRange : el.archSides.toRange;
+    await this.commitEdits([{ range, newText: side }]);
+  }
+
+  /** architecture エッジの線種 (矢印付き / 線のみ) を変更する */
+  async setArchLinkKind(el: EditableElement, kind: ArchLinkKind): Promise<void> {
+    if (!el.operatorRange) return;
+    await this.commitEdits([{ range: el.operatorRange, newText: kind === "arrow" ? "-->" : "--" }]);
+  }
+
+  /**
+   * architecture ノード (service / group / junction) の親 group を変更する。
+   * parentId=null でルート (親無し) へ、id 指定で新しい親 group の子へ。
+   */
+  async setParentGroup(nodeId: string, parentId: string | null): Promise<void> {
+    if (!this.isArchitecture()) return;
+    const node = tokenizeArchitecture(this.dom.source.value).nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+    const edits = archSetParentEdits(node, parentId);
+    if (edits.length > 0) await this.commitEdits(edits);
+  }
+
+  /** architecture ノードにラベル (`[Label]`) を追加する */
+  async addArchLabel(el: EditableElement, text: string): Promise<void> {
+    if (!this.isArchitecture() || !el.refId) return;
+    const node = tokenizeArchitecture(this.dom.source.value).nodes.find((n) => n.id === el.refId);
+    if (!node) return;
+    const edit = archAddLabelEdit(node, text);
+    if (edit) await this.commitEdits([edit]);
+  }
+
+  /** architecture ノードにアイコン (`(icon)`) を追加する */
+  async addArchIcon(el: EditableElement, icon: string): Promise<void> {
+    if (!this.isArchitecture() || !el.refId) return;
+    const node = tokenizeArchitecture(this.dom.source.value).nodes.find((n) => n.id === el.refId);
+    if (!node) return;
+    const edit = archAddIconEdit(node, icon);
+    if (edit) await this.commitEdits([edit]);
   }
 
   /**

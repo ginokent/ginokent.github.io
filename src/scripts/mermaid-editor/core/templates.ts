@@ -85,4 +85,31 @@ flowchart TD
     Insert --> MarkRecent[追加したキーを<br/>Most Recently Used にする]
     MarkRecent --> Return`,
   },
+  {
+    key: "architecture",
+    label: "アーキテクチャ",
+    text: `---
+title: Web Application Architecture
+---
+architecture-beta
+    group public(cloud)[Public]
+    group internal(cloud)[Internal]
+
+    service cdn(internet)[CDN] in public
+    service lb(server)[Load Balancer] in public
+    service api1(server)[API 1] in internal
+    service api2(server)[API 2] in internal
+    service db(database)[Primary DB] in internal
+    service cache(disk)[Cache] in internal
+    junction fanout in internal
+
+    cdn:R --> L:lb
+    lb:R --> L:fanout
+    fanout:T --> B:api1
+    fanout:B --> T:api2
+    api1:R --> L:db
+    api2:R --> L:db
+    api1:B --> T:cache
+    api2:B --> T:cache`,
+  },
 ];

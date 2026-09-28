@@ -23,8 +23,8 @@ type BlockTypeKey = "alt" | "opt" | "loop" | "par";
 
 /** UI 文言の翻訳。文字列は固定文言、関数は埋め込みのある文言 */
 export interface Messages {
-  /** フィールド表示名 (label / id / title) */
-  field: Record<"label" | "id" | "title", string>;
+  /** フィールド表示名 (label / id / title / icon) */
+  field: Record<"label" | "id" | "title" | "icon", string>;
   /** 「<フィールド名> を編集」メニューのラベルを組み立てる */
   editField: (fieldLabel: string) => string;
 
@@ -38,6 +38,10 @@ export interface Messages {
   blockType: Record<BlockTypeKey, string>;
   /** テンプレートボタンの表示名 (templates.ts の key で引く) */
   templateLabel: Record<string, string>;
+  /** architecture-beta エッジの接続点 (T/B/L/R) の表示名 */
+  archSide: Record<"T" | "B" | "L" | "R", string>;
+  /** architecture-beta エッジの線種 (矢印/線のみ) の表示名 */
+  archLinkKind: Record<"arrow" | "line", string>;
 
   /** メニュー項目のラベル */
   menu: {
@@ -88,6 +92,26 @@ export interface Messages {
     rightOf: (id: string) => string;
     leftOf: (id: string) => string;
     over: (id: string) => string;
+    // ---- architecture-beta 用 ----
+    /** 空フィールドを追加するメニュー (icon / label) */
+    addIcon: string;
+    /** サービス / グループ / ジャンクションを追加 (toolbar / インライン) */
+    addService: string;
+    addGroup: string;
+    addJunction: string;
+    /** service/group から新しいエッジを引くメニュー */
+    archEdgeToExisting: string;
+    /** エッジの接続点 (T/B/L/R) 変更のサブメニュー */
+    changeArchFromSide: string;
+    changeArchToSide: string;
+    /** エッジの線種 (矢印/線のみ) 変更 */
+    changeArchLinkKind: string;
+    /** 親 group を変更するメニュー (グループ移動) */
+    moveToGroup: string;
+    /** 親 group をルート (親無し) にする候補ラベル */
+    rootGroup: string;
+    /** 新規 group 作成を選ぶ候補 */
+    newGroup: string;
   };
 
   /** ピック中などに表示するヒント文言 (末尾は「(Esc で取消)」相当) */
@@ -105,6 +129,10 @@ export interface Messages {
     pickLifelineTarget: (from: string) => string;
     pickWrapEnd: (typeName: string) => string;
     wrapEndHeight: string;
+    /** architecture: from の要素からエッジ先の service/junction をクリック */
+    pickArchTargetFrom: (from: string) => string;
+    /** architecture: from の要素の新しい接続元・接続先を選ぶ */
+    pickArchReconnect: (who: string) => string;
   };
 
   /** 当たり判定 div の title 属性。先頭は必ず "<id>: " で始める (テスト・操作で id 前方一致するため) */
@@ -157,7 +185,7 @@ function jaSpace(base: string): string {
 }
 
 const ja: Messages = {
-  field: { label: "ラベル", id: "ID", title: "タイトル" },
+  field: { label: "ラベル", id: "ID", title: "タイトル", icon: "アイコン" },
   editField: (f) => `${jaSpace(f)}を編集`,
   shape: {
     rect: "矩形",
@@ -191,7 +219,9 @@ const ja: Messages = {
     loop: "loop (繰り返し)",
     par: "par (並行)",
   },
-  templateLabel: { sequence: "シーケンス図", flowchart: "フローチャート" },
+  templateLabel: { sequence: "シーケンス図", flowchart: "フローチャート", architecture: "アーキテクチャ" },
+  archSide: { T: "上", B: "下", L: "左", R: "右" },
+  archLinkKind: { arrow: "矢印付き (-->)", line: "線のみ (--)" },
   menu: {
     addLabel: "ラベルを追加",
     changeEdgeSource: "接続元を変更",
@@ -237,6 +267,17 @@ const ja: Messages = {
     rightOf: (id) => `${id} の右`,
     leftOf: (id) => `${id} の左`,
     over: (id) => `${id} 上`,
+    addIcon: "アイコンを追加",
+    addService: "サービスを追加",
+    addGroup: "グループを追加",
+    addJunction: "ジャンクションを追加",
+    archEdgeToExisting: "既存要素へエッジ",
+    changeArchFromSide: "接続元の位置を変更 ▸",
+    changeArchToSide: "接続先の位置を変更 ▸",
+    changeArchLinkKind: "線種を変更 ▸",
+    moveToGroup: "グループに追加 ▸",
+    rootGroup: "ルート (親なし)",
+    newGroup: "新規グループ",
   },
   hint: {
     pickNewEdgeSource: "新しい接続元のノードをクリック (Esc で取消)",
@@ -252,6 +293,8 @@ const ja: Messages = {
     pickLifelineTarget: (from) => `${from} からの送信先 (アクターの箱か縦線) をクリック (Esc で取消)`,
     pickWrapEnd: (typeName) => `${typeName} で囲む終端の要素 (メッセージかノート) をクリック (Esc で取消)`,
     wrapEndHeight: "囲む終点の高さをライフライン (またはメッセージ/ノート) でクリック (Esc で取消)",
+    pickArchTargetFrom: (from) => `${from} から接続先の要素 (service / junction / group) をクリック (Esc で取消)`,
+    pickArchReconnect: (who) => `新しい${who}の要素 (service / junction / group) をクリック (Esc で取消)`,
   },
   title: {
     lifeline: (id) => `${id}: 左クリックでこの位置からメッセージ / 右クリック・長押しでメニュー`,
@@ -294,7 +337,7 @@ const ja: Messages = {
 };
 
 const en: Messages = {
-  field: { label: "Label", id: "ID", title: "Title" },
+  field: { label: "Label", id: "ID", title: "Title", icon: "Icon" },
   editField: (f) => `Edit ${f}`,
   shape: {
     rect: "Rectangle",
@@ -328,7 +371,9 @@ const en: Messages = {
     loop: "loop (repeat)",
     par: "par (parallel)",
   },
-  templateLabel: { sequence: "Sequence", flowchart: "Flowchart" },
+  templateLabel: { sequence: "Sequence", flowchart: "Flowchart", architecture: "Architecture" },
+  archSide: { T: "Top", B: "Bottom", L: "Left", R: "Right" },
+  archLinkKind: { arrow: "Arrow (-->)", line: "Line only (--)" },
   menu: {
     addLabel: "Add label",
     changeEdgeSource: "Change source",
@@ -374,6 +419,17 @@ const en: Messages = {
     rightOf: (id) => `right of ${id}`,
     leftOf: (id) => `left of ${id}`,
     over: (id) => `over ${id}`,
+    addIcon: "Add icon",
+    addService: "Add service",
+    addGroup: "Add group",
+    addJunction: "Add junction",
+    archEdgeToExisting: "Edge to existing element",
+    changeArchFromSide: "Change source side ▸",
+    changeArchToSide: "Change target side ▸",
+    changeArchLinkKind: "Change line style ▸",
+    moveToGroup: "Add to group ▸",
+    rootGroup: "Root (no parent)",
+    newGroup: "New group",
   },
   hint: {
     pickNewEdgeSource: "Click the new source node (Esc to cancel)",
@@ -389,6 +445,8 @@ const en: Messages = {
     pickLifelineTarget: (from) => `Click the receiver (actor box or lifeline) from ${from} (Esc to cancel)`,
     pickWrapEnd: (typeName) => `Click the end element (message or note) to wrap in ${typeName} (Esc to cancel)`,
     wrapEndHeight: "Click the wrap end height on a lifeline (or a message/note) (Esc to cancel)",
+    pickArchTargetFrom: (from) => `Click the target element (service / junction / group) from ${from} (Esc to cancel)`,
+    pickArchReconnect: (who) => `Click the new ${who} element (service / junction / group) (Esc to cancel)`,
   },
   title: {
     lifeline: (id) => `${id}: left-click to start a message here / right-click or long-press for menu`,
